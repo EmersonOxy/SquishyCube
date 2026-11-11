@@ -41,27 +41,53 @@
   }
   #titleScreen[hidden] { opacity: 0; pointer-events: none; display: flex; }
   .gameTitle {
-    position: relative; margin: 0 0 12px; padding: 0 8px;
-    font-family: 'Titan One', 'Arial Rounded MT Bold', sans-serif;
-    font-size: clamp(2.1rem, 8.7vw, 4.8rem); line-height: 1;
-    letter-spacing: -.035em; white-space: nowrap; text-align: center;
-    background: linear-gradient(180deg, #f4ffc9 0%, #c8ff83 24%, #75e45b 60%, #258e58 100%);
-    color: #a8f56d; -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent; -webkit-text-stroke: 1.8px #164b3b;
-    paint-order: stroke fill;
-    filter: drop-shadow(0 4px 0 #174d3c) drop-shadow(0 10px 13px rgba(0,0,0,.48));
+    isolation: isolate; position: relative; margin: 0 0 15px; padding: .04em .08em .12em;
+    font-family: 'Coiny', 'Arial Rounded MT Bold', sans-serif;
+    font-size: clamp(2rem, 8vw, 5.25rem); line-height: 1.02;
+    letter-spacing: -.055em; white-space: nowrap; text-align: center;
     transform: rotate(-2deg);
+    filter: drop-shadow(0 9px 9px rgba(0,0,0,.32));
+  }
+  /* Mancha de tinta atrás do nome, como uma poça de slime. */
+  .gameTitle::after {
+    content: ''; position: absolute; z-index: -2;
+    left: -3%; right: -3%; top: 8%; bottom: 2%;
+    background: #f2cf69;
+    border: 2px solid rgba(255,236,157,.55);
+    border-radius: 36% 56% 42% 58% / 53% 42% 61% 48%;
+    transform: rotate(-1.5deg) scaleY(.94);
+    box-shadow: 0 4px 0 rgba(120,93,36,.18), inset 0 3px 0 rgba(255,248,199,.32);
+  }
+  /* Cópia escura por trás cria o contorno grosso e a extrusão do lettering. */
+  .gameTitle::before {
+    content: attr(data-text); position: absolute; inset: .04em .08em .12em;
+    z-index: -1; color: #174a34;
+    -webkit-text-stroke: 11px #174a34;
+    paint-order: stroke fill;
+    text-shadow: 0 4px 0 #123d2b, 0 8px 0 rgba(8,35,26,.85);
+    transform: translateY(4px);
+  }
+  .gameTitle .titleText {
+    position: relative; display: inline-block; z-index: 1;
+    color: #83d99a;
+    background: linear-gradient(180deg, #c6ffd0 0%, #91e7aa 28%, #69ce8b 68%, #3fa96c 100%);
+    background-clip: text; -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    -webkit-text-stroke: 2px #1e613f;
+    paint-order: stroke fill;
+    text-shadow: 0 2px 0 rgba(18,76,47,.45);
   }
   .gameTitle .slimeDrip {
-    position: absolute; z-index: -1; bottom: -.18em;
-    width: .13em; border-radius: 0 0 .12em .12em;
-    background: linear-gradient(180deg, #9af36b 0%, #36b866 100%);
-    box-shadow: inset 2px 0 rgba(255,255,255,.28), 0 3px 3px rgba(0,0,0,.16);
-    -webkit-text-fill-color: initial; -webkit-text-stroke: 0;
+    position: absolute; z-index: 2; bottom: -.12em;
+    width: .12em; border-radius: 35% 35% 60% 60% / 15% 15% 85% 85%;
+    background: linear-gradient(90deg, #43ad6b 0%, #a5f2b1 45%, #55c87d 100%);
+    border: 1px solid #1d603e;
+    box-shadow: 1px 2px 0 #16452f, inset 1px 0 1px rgba(255,255,255,.55);
+    pointer-events: none;
   }
-  .gameTitle .dripA { left: 21%; height: .34em; }
-  .gameTitle .dripB { left: 53%; height: .23em; width: .10em; }
-  .gameTitle .dripC { left: 79%; height: .29em; width: .12em; }
+  .gameTitle .dripA { left: 18%; height: .30em; }
+  .gameTitle .dripB { left: 51%; height: .20em; width: .10em; }
+  .gameTitle .dripC { left: 79%; height: .34em; width: .13em; }
   .playBtn {
     pointer-events: auto; width: 220px; height: 54px; border-radius: 10px; border: none; cursor: pointer;
     background: linear-gradient(160deg, #f4f5f7 0%, #c7cbd1 35%, #8c929b 60%, #eef0f2 100%);
@@ -87,13 +113,16 @@
   }
   #livesNum[hidden] { display: none; }
 </style>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&family=Titan+One&display=swap">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Coiny&family=Space+Grotesk:wght@600&display=swap">
 
 <div id="game">
   <canvas id="view" class="dim" tabindex="0" aria-label="Jogo: segure para carregar o salto e solte para pular de bloco em bloco"></canvas>
 
   <div id="titleScreen">
-    <h1 class="gameTitle">SquishyCube
+    <h1 class="gameTitle" data-text="SQUISHYCUBE" aria-label="SquishyCube">
+      <span class="titleText" aria-hidden="true">SQUISHYCUBE</span>
       <span class="slimeDrip dripA" aria-hidden="true"></span>
       <span class="slimeDrip dripB" aria-hidden="true"></span>
       <span class="slimeDrip dripC" aria-hidden="true"></span>
