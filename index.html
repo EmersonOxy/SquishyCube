@@ -41,74 +41,40 @@
   }
   #titleScreen[hidden] { opacity: 0; pointer-events: none; display: flex; }
   .gameTitle {
-    isolation: isolate; position: relative; display: inline-block;
-    margin: 0 0 24px; padding: .10em .14em .24em;
-    font-family: 'DynaPuff', 'Arial Rounded MT Bold', sans-serif;
-    font-size: clamp(2.15rem, 7.6vw, 5.45rem);
-    font-weight: 700; line-height: 1.02;
-    letter-spacing: -.065em; white-space: nowrap; text-align: center;
-    transform: rotate(-1.8deg);
-    filter: drop-shadow(0 8px 8px rgba(0,0,0,.28));
+    width: min(96vw, 720px);
+    margin: 0 0 18px;
+    line-height: 0;
+    transform: rotate(-1.2deg);
+    filter: drop-shadow(0 8px 9px rgba(0,0,0,.32));
   }
-  /* Poça de slime larga e ondulada, atrás do nome. */
-  .gameTitle::after {
-    content: ''; position: absolute; z-index: -2;
-    left: -4%; right: -4%; top: -1%; bottom: -13%;
-    background: #f5d575;
-    border: 2px solid #ffe9a4;
-    border-radius: 45% 56% 40% 60% / 54% 42% 62% 45%;
-    transform: rotate(-1.4deg) scaleY(1.04);
-    box-shadow: 0 5px 0 rgba(120,93,36,.18), inset 0 3px 0 rgba(255,248,199,.42);
+  .slimeLogo {
+    display: block; width: 100%; height: auto; overflow: visible;
   }
-  .gameTitle .titleText {
-    position: relative; display: inline-flex; align-items: center;
-    z-index: 1; white-space: nowrap; line-height: .98;
+  .slimeLogo .shadow {
+    fill: none; stroke: #103e2b; stroke-width: 47;
+    stroke-linecap: round; stroke-linejoin: round;
   }
-  /* Letras separadas: cada glifo recebe largura, peso e inclinação próprios. */
-  .gameTitle .letter {
-    position: relative; display: inline-block;
-    font-family: 'DynaPuff', sans-serif;
-    font-variation-settings: 'wdth' var(--width, 88), 'wght' var(--weight, 700);
-    color: #8de3a1;
-    background: linear-gradient(180deg, #e0ffe0 0%, #b3f4bd 18%, #86dfa0 48%, #68ca88 76%, #4aaa70 100%);
-    background-clip: text; -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    -webkit-text-stroke: 3px #205f3e;
-    paint-order: stroke fill;
-    text-shadow: 0 2px 0 #286e47, 0 4px 0 #174a34;
-    transform: rotate(var(--rot, 0deg)) translateY(var(--lift, 0)) scaleX(var(--sx, 1)) scaleY(var(--sy, 1));
-    transform-origin: 50% 80%;
-    margin-inline: -.012em;
+  .slimeLogo .outline {
+    fill: none; stroke: #174b33; stroke-width: 44;
+    stroke-linecap: round; stroke-linejoin: round;
   }
-  /* Borda escura por caractere, desenhada sobre o contorno real de cada letra. */
-  .gameTitle .letter::before {
-    content: attr(data-char); position: absolute; inset: 0;
-    z-index: -1; color: #174a34; -webkit-text-fill-color: #174a34;
-    -webkit-text-stroke: 9px #174a34;
-    text-shadow: 0 4px 0 #123d2b, 0 7px 0 rgba(8,35,26,.7);
+  .slimeLogo .midline {
+    fill: none; stroke: #327b4c; stroke-width: 35;
+    stroke-linecap: round; stroke-linejoin: round;
   }
-  .gameTitle .letter:nth-child(1)  { --width: 88; --weight: 690; --rot: -5deg; --lift: .025em; --sx: 1.06; --sy: 1.02; }
-  .gameTitle .letter:nth-child(2)  { --width: 96; --weight: 700; --rot: 3deg;  --lift: -.015em; --sx: 1.02; --sy: 1.08; }
-  .gameTitle .letter:nth-child(3)  { --width: 82; --weight: 680; --rot: -2deg; --lift: .012em; --sx: 1.10; --sy: .98; }
-  .gameTitle .letter:nth-child(4)  { --width: 75; --weight: 700; --rot: 2deg;  --lift: -.035em; --sx: 1.13; --sy: 1.05; }
-  .gameTitle .letter:nth-child(5)  { --width: 91; --weight: 690; --rot: -3deg; --lift: .018em; --sx: 1.03; --sy: 1.04; }
-  .gameTitle .letter:nth-child(6)  { --width: 100; --weight: 700; --rot: 2deg; --lift: -.025em; --sx: 1.02; --sy: 1.07; }
-  .gameTitle .letter:nth-child(7)  { --width: 86; --weight: 680; --rot: -4deg; --lift: .012em; --sx: 1.07; --sy: 1.00; }
-  .gameTitle .letter:nth-child(8)  { --width: 91; --weight: 700; --rot: 3deg;  --lift: -.018em; --sx: 1.04; --sy: 1.06; }
-  .gameTitle .letter:nth-child(9)  { --width: 84; --weight: 690; --rot: -2deg; --lift: .020em; --sx: 1.08; --sy: 1.01; }
-  .gameTitle .letter:nth-child(10) { --width: 96; --weight: 700; --rot: 2deg;  --lift: -.028em; --sx: 1.02; --sy: 1.08; }
-  .gameTitle .letter:nth-child(11) { --width: 80; --weight: 680; --rot: -3deg; --lift: .008em; --sx: 1.10; --sy: 1.00; }
-  .gameTitle .slimeDrip {
-    position: absolute; z-index: 2; bottom: -.02em;
-    width: .12em; border-radius: 40% 40% 58% 58% / 18% 18% 82% 82%;
-    background: linear-gradient(90deg, #43ad6b 0%, #b4f6bd 45%, #55c87d 100%);
-    border: 1.5px solid #1d603e;
-    box-shadow: 1px 2px 0 #16452f, inset 1px 0 1px rgba(255,255,255,.65);
-    pointer-events: none;
+  .slimeLogo .fill {
+    fill: none; stroke: url(#slimeFill); stroke-width: 27;
+    stroke-linecap: round; stroke-linejoin: round;
   }
-  .gameTitle .dripA { left: 16%; height: .34em; }
-  .gameTitle .dripB { left: 49%; height: .23em; width: .10em; }
-  .gameTitle .dripC { left: 80%; height: .37em; width: .14em; }
+  .slimeLogo .gloss {
+    fill: none; stroke: #e1ffe0; stroke-width: 4.2;
+    stroke-linecap: round; stroke-linejoin: round; opacity: .54;
+  }
+  .slimeLogo .drip {
+    fill: url(#slimeFill); stroke: #174b33; stroke-width: 5;
+    stroke-linejoin: round;
+  }
+  .slimeLogo .dropHighlight { fill: #e1ffe0; opacity: .55; }
   .playBtn {
     pointer-events: auto; width: 220px; height: 54px; border-radius: 10px; border: none; cursor: pointer;
     background: linear-gradient(160deg, #f4f5f7 0%, #c7cbd1 35%, #8c929b 60%, #eef0f2 100%);
@@ -136,17 +102,136 @@
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DynaPuff:wdth,wght@75..100,400..700&family=Space+Grotesk:wght@600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&display=swap">
 
 <div id="game">
   <canvas id="view" class="dim" tabindex="0" aria-label="Jogo: segure para carregar o salto e solte para pular de bloco em bloco"></canvas>
 
   <div id="titleScreen">
     <h1 class="gameTitle" aria-label="SquishyCube">
-      <span class="titleText" aria-hidden="true"><span class="letter" data-char="S">S</span><span class="letter" data-char="Q">Q</span><span class="letter" data-char="U">U</span><span class="letter" data-char="I">I</span><span class="letter" data-char="S">S</span><span class="letter" data-char="H">H</span><span class="letter" data-char="Y">Y</span><span class="letter" data-char="C">C</span><span class="letter" data-char="U">U</span><span class="letter" data-char="B">B</span><span class="letter" data-char="E">E</span></span>
-      <span class="slimeDrip dripA" aria-hidden="true"></span>
-      <span class="slimeDrip dripB" aria-hidden="true"></span>
-      <span class="slimeDrip dripC" aria-hidden="true"></span>
+      <svg class="slimeLogo" viewBox="0 0 900 165" role="img" aria-labelledby="squishyLogoTitle">
+        <title id="squishyLogoTitle">SquishyCube</title>
+        <defs>
+          <linearGradient id="slimeFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#d9ffd8"/>
+            <stop offset=".22" stop-color="#b5f2bd"/>
+            <stop offset=".58" stop-color="#84dda0"/>
+            <stop offset="1" stop-color="#53b978"/>
+          </linearGradient>
+          <linearGradient id="puddleFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffe89a"/>
+            <stop offset="1" stop-color="#edc85e"/>
+          </linearGradient>
+
+          <!-- Glifos vetoriais próprios: cada letra tem uma silhueta ligeiramente irregular. -->
+          <g id="glyphS"><path d="M70 27 C62 11 37 9 20 20 C5 30 9 48 27 51 C46 54 68 49 69 68 C70 89 48 104 26 101 C16 100 8 94 6 84"/></g>
+          <g id="glyphQ">
+            <path d="M35 17 C15 17 5 34 8 61 C10 88 27 104 49 96 C70 87 75 58 66 35 C60 18 49 13 35 17 Z"/>
+            <path d="M49 77 C58 87 67 97 76 105"/>
+          </g>
+          <g id="glyphU"><path d="M10 18 C7 44 8 76 18 91 C29 108 57 103 67 88 C76 74 72 43 69 18"/></g>
+          <g id="glyphI"><path d="M18 21 C15 43 16 76 19 98"/></g>
+          <g id="glyphH">
+            <path d="M10 19 C8 44 8 77 11 100"/>
+            <path d="M70 18 C67 44 68 77 71 99"/>
+            <path d="M10 59 C29 54 52 55 70 59"/>
+          </g>
+          <g id="glyphY">
+            <path d="M8 20 C18 39 31 54 40 58 C53 49 65 33 73 19"/>
+            <path d="M40 58 C41 73 42 88 40 103"/>
+          </g>
+          <g id="glyphC"><path d="M71 25 C59 12 38 12 22 21 C3 33 4 78 22 94 C37 107 58 103 72 88"/></g>
+          <g id="glyphB">
+            <path d="M12 18 C9 42 10 75 12 101"/>
+            <path d="M13 25 C39 12 68 17 66 39 C64 56 39 57 13 55"/>
+            <path d="M13 55 C43 47 72 60 69 81 C66 105 38 109 12 97"/>
+          </g>
+          <g id="glyphE">
+            <path d="M13 19 C10 43 10 76 13 100"/>
+            <path d="M13 24 C31 21 51 20 69 23"/>
+            <path d="M13 59 C30 56 47 56 61 59"/>
+            <path d="M13 97 C33 99 52 96 71 92"/>
+          </g>
+        </defs>
+
+        <!-- Poça amarela orgânica por trás das letras. -->
+        <path d="M28 69 C52 48 82 61 110 48 C139 34 154 54 185 50 C216 46 233 29 264 48 C292 66 313 43 343 47 C373 52 382 29 412 42 C439 54 457 36 485 45 C514 55 533 34 562 48 C588 61 609 42 637 47 C668 52 687 31 715 45 C744 59 766 46 793 55 C827 66 856 53 876 72 C894 90 871 111 841 112 C806 113 792 127 759 119 C730 112 710 130 680 122 C649 114 631 137 602 125 C572 113 548 133 516 122 C484 111 465 133 435 122 C405 112 381 130 350 117 C318 104 297 127 267 115 C237 103 216 122 186 113 C157 104 137 121 107 112 C78 103 48 116 27 99 C12 87 15 80 28 69 Z" fill="url(#puddleFill)" stroke="#ffe9a4" stroke-width="3"/>
+
+        <!-- SQUISHYCUBE: sombra, contorno, faixa interna, corpo e brilho. -->
+        <g class="shadow" transform="translate(0 5)">
+          <use href="#glyphS" x="8" y="0" transform="rotate(-4 48 60)"/>
+          <use href="#glyphQ" x="91" y="0" transform="rotate(3 131 60)"/>
+          <use href="#glyphU" x="177" y="0" transform="rotate(-2 217 60)"/>
+          <use href="#glyphI" x="263" y="0" transform="rotate(2 281 60)"/>
+          <use href="#glyphS" x="302" y="0" transform="rotate(-3 342 60)"/>
+          <use href="#glyphH" x="386" y="0" transform="rotate(2 426 60)"/>
+          <use href="#glyphY" x="470" y="0" transform="rotate(-3 510 60)"/>
+          <use href="#glyphC" x="554" y="0" transform="rotate(2 594 60)"/>
+          <use href="#glyphU" x="638" y="0" transform="rotate(-2 678 60)"/>
+          <use href="#glyphB" x="722" y="0" transform="rotate(2 762 60)"/>
+          <use href="#glyphE" x="806" y="0" transform="rotate(-2 846 60)"/>
+        </g>
+        <g class="outline">
+          <use href="#glyphS" x="8" y="0" transform="rotate(-4 48 60)"/>
+          <use href="#glyphQ" x="91" y="0" transform="rotate(3 131 60)"/>
+          <use href="#glyphU" x="177" y="0" transform="rotate(-2 217 60)"/>
+          <use href="#glyphI" x="263" y="0" transform="rotate(2 281 60)"/>
+          <use href="#glyphS" x="302" y="0" transform="rotate(-3 342 60)"/>
+          <use href="#glyphH" x="386" y="0" transform="rotate(2 426 60)"/>
+          <use href="#glyphY" x="470" y="0" transform="rotate(-3 510 60)"/>
+          <use href="#glyphC" x="554" y="0" transform="rotate(2 594 60)"/>
+          <use href="#glyphU" x="638" y="0" transform="rotate(-2 678 60)"/>
+          <use href="#glyphB" x="722" y="0" transform="rotate(2 762 60)"/>
+          <use href="#glyphE" x="806" y="0" transform="rotate(-2 846 60)"/>
+        </g>
+        <g class="midline">
+          <use href="#glyphS" x="8" y="0" transform="rotate(-4 48 60)"/>
+          <use href="#glyphQ" x="91" y="0" transform="rotate(3 131 60)"/>
+          <use href="#glyphU" x="177" y="0" transform="rotate(-2 217 60)"/>
+          <use href="#glyphI" x="263" y="0" transform="rotate(2 281 60)"/>
+          <use href="#glyphS" x="302" y="0" transform="rotate(-3 342 60)"/>
+          <use href="#glyphH" x="386" y="0" transform="rotate(2 426 60)"/>
+          <use href="#glyphY" x="470" y="0" transform="rotate(-3 510 60)"/>
+          <use href="#glyphC" x="554" y="0" transform="rotate(2 594 60)"/>
+          <use href="#glyphU" x="638" y="0" transform="rotate(-2 678 60)"/>
+          <use href="#glyphB" x="722" y="0" transform="rotate(2 762 60)"/>
+          <use href="#glyphE" x="806" y="0" transform="rotate(-2 846 60)"/>
+        </g>
+        <g class="fill">
+          <use href="#glyphS" x="8" y="0" transform="rotate(-4 48 60)"/>
+          <use href="#glyphQ" x="91" y="0" transform="rotate(3 131 60)"/>
+          <use href="#glyphU" x="177" y="0" transform="rotate(-2 217 60)"/>
+          <use href="#glyphI" x="263" y="0" transform="rotate(2 281 60)"/>
+          <use href="#glyphS" x="302" y="0" transform="rotate(-3 342 60)"/>
+          <use href="#glyphH" x="386" y="0" transform="rotate(2 426 60)"/>
+          <use href="#glyphY" x="470" y="0" transform="rotate(-3 510 60)"/>
+          <use href="#glyphC" x="554" y="0" transform="rotate(2 594 60)"/>
+          <use href="#glyphU" x="638" y="0" transform="rotate(-2 678 60)"/>
+          <use href="#glyphB" x="722" y="0" transform="rotate(2 762 60)"/>
+          <use href="#glyphE" x="806" y="0" transform="rotate(-2 846 60)"/>
+        </g>
+        <g class="gloss" transform="translate(-1 -2)">
+          <use href="#glyphS" x="8" y="0" transform="rotate(-4 48 60)"/>
+          <use href="#glyphQ" x="91" y="0" transform="rotate(3 131 60)"/>
+          <use href="#glyphU" x="177" y="0" transform="rotate(-2 217 60)"/>
+          <use href="#glyphI" x="263" y="0" transform="rotate(2 281 60)"/>
+          <use href="#glyphS" x="302" y="0" transform="rotate(-3 342 60)"/>
+          <use href="#glyphH" x="386" y="0" transform="rotate(2 426 60)"/>
+          <use href="#glyphY" x="470" y="0" transform="rotate(-3 510 60)"/>
+          <use href="#glyphC" x="554" y="0" transform="rotate(2 594 60)"/>
+          <use href="#glyphU" x="638" y="0" transform="rotate(-2 678 60)"/>
+          <use href="#glyphB" x="722" y="0" transform="rotate(2 762 60)"/>
+          <use href="#glyphE" x="806" y="0" transform="rotate(-2 846 60)"/>
+        </g>
+
+        <!-- Gotas integradas ao lettering, com volume e contorno próprio. -->
+        <path class="drip" d="M170 94 C177 93 181 97 180 105 L179 132 C178 143 170 149 165 140 C160 132 165 116 166 105 C166 99 166 96 170 94 Z"/>
+        <path class="dropHighlight" d="M169 101 C171 98 174 99 174 104 L172 125 C171 129 169 129 168 125 Z"/>
+        <path class="drip" d="M373 101 C379 99 384 103 383 110 L382 128 C381 136 374 140 370 133 C367 127 370 115 370 109 C370 105 370 102 373 101 Z"/>
+        <path class="dropHighlight" d="M374 106 C376 103 378 105 377 111 L376 123 C375 126 373 126 373 122 Z"/>
+        <path class="drip" d="M690 94 C697 92 702 97 701 105 L700 129 C699 140 691 145 686 137 C682 130 686 114 686 105 C686 99 686 96 690 94 Z"/>
+        <path class="dropHighlight" d="M691 101 C694 98 696 100 695 106 L694 126 C693 130 691 129 690 125 Z"/>
+      </svg>
     </h1>
     <button class="playBtn" id="playBtn" type="button" aria-label="Jogar">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l15 8-15 8z"/></svg>
