@@ -1,0 +1,1536 @@
+<title>SquishyCube</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07131d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: cena 3D em tela cheia, sem HUD — só a tela inicial traz controles (estilo/cor/jogar). */
+  :root {
+    --void: #10202b;
+    --stone: #3f6473;
+    --player: #ffb238;
+    --ink: #e9f3f4;
+    --font-ui: ui-sans-serif, system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  html, body { width: 100%; height: 100%; margin: 0; padding: 0; }
+  body {
+    background: var(--void); color: var(--ink); font-family: var(--font-ui);
+    overflow: hidden; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  #game { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100dvh; overflow: hidden; }
+  #view {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none;
+    transition: opacity .5s, filter .4s;
+  }
+  #view.dim { opacity: .4; }
+  #view.grayscale { filter: grayscale(1) contrast(1.15) brightness(.9); }
+  #wipeScreen {
+    position: absolute; inset: 0; background: #000; pointer-events: none; z-index: 5;
+    transform: translateX(100%);
+  }
+  #wipeScreen[hidden] { display: none; }
+  #err { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink); pointer-events: none; }
+  #err[hidden] { display: none; }
+
+  #titleScreen {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    pointer-events: none; transition: opacity .4s; padding: 16px;
+  }
+  #titleScreen[hidden] { opacity: 0; pointer-events: none; display: flex; }
+  .playBtn {
+    pointer-events: auto; width: 220px; height: 54px; border-radius: 10px; border: none; cursor: pointer;
+    background: linear-gradient(160deg, #f4f5f7 0%, #c7cbd1 35%, #8c929b 60%, #eef0f2 100%);
+    color: #20242a; display: grid; place-items: center;
+    box-shadow: 0 6px 26px rgba(0,0,0,.45), inset 0 1px 1px rgba(255,255,255,.7), inset 0 -2px 4px rgba(0,0,0,.25);
+  }
+  .playBtn svg { width: 26px; height: 26px; margin-left: 4px; }
+  .pickRow { pointer-events: auto; display: flex; gap: 14px; }
+  .pickBtn {
+    width: 38px; height: 38px; border-radius: 50%; cursor: pointer; border: 2px solid var(--ink);
+    background: var(--stone); padding: 0;
+  }
+  #levelNum {
+    position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(14px + env(safe-area-inset-top, 0px));
+    font: 600 1.7rem "Space Grotesk", var(--font-ui); color: #fdfcf7; letter-spacing: .03em;
+    pointer-events: none;
+  }
+  #levelNum[hidden] { display: none; }
+  #livesNum {
+    position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(14px + env(safe-area-inset-top, 0px));
+    font: 600 1.4rem "Space Grotesk", var(--font-ui); color: #ffd7de; letter-spacing: .03em;
+    pointer-events: none;
+  }
+  #livesNum[hidden] { display: none; }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&display=swap">
+
+<div id="game">
+  <canvas id="view" class="dim" tabindex="0" aria-label="Jogo: segure para carregar o salto e solte para pular de bloco em bloco"></canvas>
+
+  <div id="titleScreen">
+    <button class="playBtn" id="playBtn" type="button" aria-label="Jogar">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l15 8-15 8z"/></svg>
+    </button>
+    <div class="pickRow">
+      <button class="pickBtn" id="styleBtn" type="button" aria-label="Estilo de cenário"></button>
+      <button class="pickBtn" id="colorBtn" type="button" aria-label="Cor do player"></button>
+    </div>
+  </div>
+
+  <div id="wipeScreen" hidden></div>
+  <div id="levelNum" hidden>1</div>
+  <div id="livesNum" hidden>♥</div>
+  <div id="err" hidden>Não foi possível carregar o motor 3D. Verifique a conexão e recarregue.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  if (!window.THREE) { document.getElementById('err').hidden = false; return; }
+
+  // ---------- Parâmetros de ajuste ----------
+  var CFG = {
+    rows: 3, blockH: 1.4, playerSize: 0.56,
+    chargeDeadzone: 0.09, chargeMax: 0.8,
+    squashMax: 0.40,
+    springK: 150, springDamp: 15,
+    gravity: 11, vy0Min: 3.0, vy0Max: 7.6, vxMin: 1.8, vxMax: 2.6,
+    hopRest: 0.03, wallBounce: 0.1, wallImpactTime: 0.15, fallOutY: -3.2,
+    camBobAmp: 0.023, camRollAmp: 0.014, camSwayDecay: 9, camFollowRate: 3.4,
+    camYaw: -0.80, camDistMult: 1.00, camPitch: 0.25, camHeightExtra: 0.95, camViewTilt: 0.08,
+    settleRate: 14,
+    terrainStep: 0.34, terrainRange: 0.85, gapChance: 0.3,
+    cliffChance: 0.5, cliffSpanMin: 3, cliffSpanMax: 9, cliffCooldown: 6, cliffMin: 0.9, cliffMax: 1.7,
+    wetChance: 0.045,     // bloco molhado: chance por coluna; o efeito dura até o fim da fase
+    gooLife: 5, gooFade: 1.4,
+    wetDripRate: 5, wetDripScale: 0.06,
+    startCol: 4,
+    levelBase: 16, levelStep: 6, levelMax: 260,   // progressão infinita: tamanho do nível cresce a cada avanço
+    spikeLevel: 5, spikeChance: 0.11, spikeCooldown: 2   // espinhos só a partir desse nível
+  };
+  var COL = { void: 0xbfe0ef, stone: 0x15708f, line: 0x6a92a0, player: 0xffb238, goo: 0x8a7a2a, outline: 0xe9f3f4, wet: 0x1f8fd4, crystal: 0xb86bff, spike: 0xff3b3b };
+  function levelCols(l) { return Math.min(CFG.levelMax, CFG.levelBase + l * CFG.levelStep); }
+
+  var canvas = document.getElementById('view');
+  // A cena é renderizada em duas passagens (cena + distorção). Limitar o DPR evita
+  // que telas HiDPI multipliquem desnecessariamente o custo de preenchimento da GPU.
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+
+  var scene = new THREE.Scene();
+  // fundo com um brilho bem fraco subindo do fundo da tela (não um preto/azul chapado)
+  var bgTex = (function () {
+    var cvs = document.createElement('canvas'); cvs.width = 2; cvs.height = 128;
+    var ctx = cvs.getContext('2d');
+    var g = ctx.createLinearGradient(0, 0, 0, 128);
+    g.addColorStop(0, '#050a14');
+    g.addColorStop(0.55, '#0a1a28');
+    g.addColorStop(1, '#1c1710');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 128);
+    var tex = new THREE.CanvasTexture(cvs);
+    tex.magFilter = THREE.LinearFilter;
+    return tex;
+  })();
+  scene.background = bgTex;
+  // neblina de distância: esconde o resto da fase lá na frente (não dá pra ver tudo de uma vez).
+  // Cor escura (do limbo) em vez do azul claro do céu: assim o efeito lê como "escurece ao longe",
+  // não como uma névoa clara embaçando tudo por igual.
+  scene.fog = new THREE.Fog(0x0a1118, 14, 34);
+
+  var camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+
+  // ---------- Pós-processamento: leve distorção de olho de peixe nos cantos ----------
+  // (three.js puro não tem isso pronto — renderiza a cena numa textura e distorce num quad de tela cheia)
+  var fishTarget = new THREE.WebGLRenderTarget(2, 2);
+  var fishScene = new THREE.Scene();
+  var fishCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  var fishMat = new THREE.ShaderMaterial({
+    uniforms: { tDiffuse: { value: fishTarget.texture }, strength: { value: 0.12 }, aspect: { value: 1 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: [
+      'uniform sampler2D tDiffuse; uniform float strength; uniform float aspect; varying vec2 vUv;',
+      'void main() {',
+      '  vec2 p = vUv * 2.0 - 1.0;',
+      '  p.x *= aspect;',   // corrige pela proporção da tela: sem isso a distorção fica errada/cortada em telas largas
+      '  float r2 = dot(p, p);',
+      '  vec2 pd = p * (1.0 + strength * r2);',
+      '  pd.x /= aspect;',
+      '  vec2 uv = clamp(pd * 0.5 + 0.5, 0.0, 1.0);',   // clampa em vez de mostrar um retalho de cor lisa:
+      '  gl_FragColor = texture2D(tDiffuse, uv);',       // assim a imagem sempre cobre o quadro inteiro
+      '}'
+    ].join('\n')
+  });
+  fishScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), fishMat));
+
+  // ---------- Atmosfera: luz forte vindo de baixo + neblina clara, tipo "céu com plataformas" ----------
+  // em vez de um feixe pontual saindo de um objeto (que dava problema de oclusão), a cena inteira
+  // é tratada como se as plataformas flutuassem acima de uma claridade — luz de verdade + fog, não
+  // um efeito isolado: a cor de "chão" da hemisphere light ilumina as faces de baixo de tudo, e a
+  // direcional de baixo reforça isso. A combinação com a fog (mais clara, mais perto) é o que dá
+  // a sensação de estar em cima de nuvens.
+  scene.add(new THREE.HemisphereLight(0xcfe8f5, 0xdcd2a8, 0.55));
+  var upLight = new THREE.DirectionalLight(0xfff3d6, 0.35);
+  upLight.position.set(0, -1, 0);
+  upLight.target.position.set(0, 0, 0);
+  scene.add(upLight); scene.add(upLight.target);
+  var sun = new THREE.DirectionalLight(0xffffff, 0.35);
+  sun.position.set(-4, 8, 6);
+  scene.add(sun);
+
+  // ---------- Terreno procedural: ondulação suave + paredes/montanhas abruptas + vãos + bloco molhado ----------
+  function genTerrain(n, startCol) {
+    var raw = new Array(n), h = 0;
+    for (var c = 0; c < n; c++) {
+      h += (Math.random() - 0.5) * CFG.terrainStep;
+      h = Math.max(-CFG.terrainRange, Math.min(CFG.terrainRange, h));
+      raw[c] = h;
+    }
+    var heights = raw.slice();
+    for (var i = 1; i < n - 1; i++) heights[i] = (raw[i - 1] + raw[i] * 2 + raw[i + 1]) / 4;
+
+    var cliffs = [];
+    var ci = Math.max(6, startCol + 10);
+    while (ci < n - 6) {
+      if (Math.random() < CFG.cliffChance) {
+        var span = CFG.cliffSpanMin + Math.floor(Math.random() * (CFG.cliffSpanMax - CFG.cliffSpanMin + 1));
+        var end = Math.min(n - 3, ci + span);
+        var amt = (Math.random() < 0.62 ? 1 : -1) * (CFG.cliffMin + Math.random() * (CFG.cliffMax - CFG.cliffMin));
+        for (var j = ci; j < end; j++) heights[j] += amt;
+        cliffs.push({ start: ci, end: end });
+        ci = end + CFG.cliffCooldown;
+      } else ci++;
+    }
+    // zona "antes" bem mais larga que "depois": subir uma parede exige correr e ganhar altura antes
+    // de chegar nela — sem essa pista livre, a física não dá pra escalar de jeito nenhum (ver abaixo).
+    // Descer não tem esse problema, por isso o buffer depois do fim do trecho pode ser bem menor.
+    function inCliffZone(c) {
+      for (var k = 0; k < cliffs.length; k++) if (c >= cliffs[k].start - 4 && c <= cliffs[k].end + 1) return true;
+      return false;
+    }
+
+    var gaps = new Array(n).fill(false);
+    var runLen = 0, cooldown = 3;
+    for (var c2 = 2; c2 < n - 2; c2++) {
+      if (Math.abs(c2 - startCol) < 3 || cooldown > 0 || inCliffZone(c2)) { cooldown = Math.max(0, cooldown - 1); runLen = 0; continue; }
+      if (runLen >= 2) { runLen = 0; cooldown = 2; continue; }
+      if (Math.random() < CFG.gapChance) { gaps[c2] = true; runLen++; } else runLen = 0;
+    }
+    var wetCols = {};
+    for (var c3 = 0; c3 < n; c3++) {
+      if (gaps[c3] || Math.abs(c3 - startCol) < 5) continue;
+      if (Math.random() < CFG.wetChance) wetCols[c3] = true;
+    }
+    return { heights: heights, gaps: gaps, wetCols: wetCols };
+  }
+  var level = 1;
+  // mundo contínuo: nunca é recriado do zero durante o jogo — só cresce (appendChunk) e poda o que
+  // já ficou pra trás (pruneOldChunks). "Fase" aqui é só um trecho desse mundo; o cristal no fim de
+  // cada um é um marco visual, não um gatilho de recomeço.
+  var worldHeights = [], worldGaps = [], worldWetCols = {}, worldSpikes = {};
+  var chunkStarts = [], chunkEnds = [], passedChunks = 0, chunkOffset = 0;
+  function groundAt(c) { return (c >= 0 && c < worldHeights.length && !worldGaps[c]) ? worldHeights[c] : null; }
+  // caminho alternativo: colunas com um bloco flutuante mais alto além do chão normal — o jogador
+  // escolhe por qual passar. refPy é a altura atual dele: decide qual das duas (se houver as duas)
+  // é a que ele realmente vai encontrar caindo, em vez de travar sempre na mais alta.
+  var worldFloatHeights = {};
+  function surfaceAt(c, refPy) {
+    var g = groundAt(c);
+    var f = worldFloatHeights[c];
+    if (f === undefined) return g;
+    if (g == null) return refPy >= f ? f : null;
+    return refPy >= f ? f : g;
+  }
+
+  // ---------- Vida extra: não acumula — o jogador tem 1 vida normal; o cristal de vida extra dá
+  // uma segunda chance só na fase em que foi pego (não soma, não atravessa pra outras fases).
+  var hasExtraLife = false;
+
+  // ---------- Cristal de poder: 1 por fase, flutua girando acima de um bloco aleatório, cor própria
+  // por efeito (decidido já ao nascer, não só ao tocar) — vale até o fim da fase ----------
+  var CRYSTAL_EFFECTS = {
+    fastjump: 0x45e0ff,   // ciano elétrico: pula mais rápido (mais alcance horizontal)
+    highjump: 0x5dff86,   // verde: pula mais alto
+    bigger: 0xffa23f,     // laranja: aumenta de tamanho
+    smaller: 0xc06bff,    // roxo: diminui de tamanho
+    extralife: 0xff5c7a,  // rosa: vida extra
+    slowfall: 0xfff08a    // amarelo claro: cai devagar
+  };
+  var crystals = [];   // { col, effect, mesh, collected, revealed }
+  var buffVxMult = 1, buffVyMult = 1, buffGravityMult = 1;
+  var buffScale = 1, buffScaleTarget = 1;   // buffScale segue buffScaleTarget suavemente (anima crescer/encolher, não pisca)
+  function clearCrystalBuff() { buffVxMult = 1; buffVyMult = 1; buffGravityMult = 1; buffScaleTarget = 1; }
+  function makeCrystalMesh(effect) {
+    // bem maior e mais brilhante que antes: no cenário escuro, o cristal pequeno e fosco
+    // praticamente desaparecia — precisa se destacar à distância mesmo com luz fraca.
+    var color = CRYSTAL_EFFECTS[effect];
+    var mat = new THREE.MeshToonMaterial({ color: color, gradientMap: toonGradient, emissive: color, emissiveIntensity: 0.65, transparent: true, opacity: 0.92 });
+    var group = new THREE.Group();
+    var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.52, 6), mat);
+    var tip = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 6), mat);
+    tip.position.y = 0.43;
+    group.add(shaft, tip);
+    var glow = new THREE.PointLight(color, 0.4, 5, 2);
+    group.add(glow);
+    group.rotation.x = Math.PI * 0.04;
+    return group;
+  }
+  function applyCrystalEffect(effect) {
+    if (effect !== 'extralife') clearCrystalBuff();   // só um buff de movimento ativo por vez; vida extra não mexe nos outros
+    if (effect === 'fastjump') buffVxMult = 1.55;
+    else if (effect === 'highjump') buffVyMult = 1.35;
+    else if (effect === 'bigger') buffScaleTarget = 1.55;
+    else if (effect === 'smaller') buffScaleTarget = 0.62;
+    else if (effect === 'extralife') { hasExtraLife = true; updateLivesUI(); }
+    else if (effect === 'slowfall') buffGravityMult = 0.5;
+  }
+  function updateCrystals(dt) {
+    for (var i = 0; i < crystals.length; i++) {
+      var c = crystals[i];
+      if (c.collected || !c.mesh) continue;
+      if (!c.revealed) { if (camX < c.col - RISE_TRIGGER_DIST) continue; c.revealed = true; c.mesh.visible = true; }
+      c.mesh.rotation.y += dt * 1.1;
+      c.mesh.position.y = c.baseY + Math.sin(performance.now() * 0.0016 + c.col) * 0.09;
+    }
+  }
+  function updateSpikes() {
+    for (var i = 0; i < spikes.length; i++) {
+      var s = spikes[i];
+      if (!s.revealed) { if (camX < s.col - RISE_TRIGGER_DIST) continue; s.revealed = true; s.mesh.visible = true; }
+    }
+  }
+  function updateFloatBlocks() {
+    for (var i = 0; i < floatBlocks.length; i++) {
+      var fb = floatBlocks[i];
+      if (!fb.revealed) { if (camX < fb.col - RISE_TRIGGER_DIST) continue; fb.revealed = true; fb.mesh.visible = true; }
+    }
+  }
+  // coleta o cristal assim que o jogador passa pela coluna dele — no ar, carregando ou parado,
+  // não só ao pousar exatamente ali
+  function checkCrystalPickup() {
+    var nearCol = Math.round(px);
+    for (var i = 0; i < crystals.length; i++) {
+      var cr = crystals[i];
+      if (!cr.collected && cr.col === nearCol) {
+        cr.collected = true; cr.mesh.visible = false;
+        applyCrystalEffect(cr.effect);
+      }
+    }
+  }
+
+  // ---------- Mapa: blocos 3D com junta quase imperceptível ----------
+  var boxGeo = new THREE.BoxGeometry(1, CFG.blockH, 1);
+  var edgeGeo = new THREE.EdgesGeometry(boxGeo);
+  var lineMat = new THREE.LineBasicMaterial({ color: 0x6a92a0, transparent: true, opacity: 0.16 });
+  // sombreamento cartoon de verdade: faixas de luz em degraus (cel-shading), não luz contínua
+  var toonGradient = (function () {
+    var steps = 4, data = new Uint8Array(steps * 3);
+    for (var i = 0; i < steps; i++) {
+      var v = Math.round(215 * (i + 1) / steps);   // nunca bate 255: evita estourar pra branco puro
+      data[i * 3] = v; data[i * 3 + 1] = v; data[i * 3 + 2] = v;
+    }
+    var tex = new THREE.DataTexture(data, steps, 1, THREE.RGBFormat);
+    tex.minFilter = THREE.NearestFilter; tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    return tex;
+  })();
+  var blockOutlineMat = new THREE.MeshBasicMaterial({ color: COL.outline, side: THREE.BackSide, transparent: true, opacity: 0.2, depthWrite: false });
+  var scenario = 'default';   // 'default' | 'pastel' | 'colorido'
+  var lane = Math.floor(CFG.rows / 2);
+  var baseColor = new THREE.Color(COL.stone);
+  var wetTint = new THREE.Color(COL.wet);
+  var blockMeshes = [];
+  var laneMesh = [], laneColorHex = [], rowMesh = [];   // rowMesh[r][col] = bloco daquela fileira
+  var risingBlocks = [];   // blocos do próximo trecho subindo do limbo até a posição final
+  var RISE_DIST = 6, RISE_WAVE = 1.1, RISE_DUR = 0.55, RISE_TRIGGER_DIST = 11;
+  var faceCanvas = {};
+  // constrói só o trecho [startC, startC+len) — nunca mexe no que já existe antes dele
+  function buildChunk(startC, len, heights, gaps, wetCols, animate) {
+    var colHue = new Array(len);
+    if (scenario === 'colorido') for (var ch = 0; ch < len; ch++) colHue[ch] = Math.random();
+    for (var r = 0; r < CFG.rows; r++) {
+      for (var ci = 0; ci < len; ci++) {
+        if (gaps[ci]) continue;
+        var c = startC + ci;
+        var shade = (r === lane ? 1.045 : 0.965) * ((c + r) % 2 ? 1 : 0.99);
+        var blockColor;
+        if (scenario === 'pastel') blockColor = new THREE.Color(0xcdc0a3).multiplyScalar(0.92 + (shade - 0.965) * 0.4);   // mais opaco, menos estourado
+        else if (scenario === 'colorido') blockColor = new THREE.Color().setHSL(colHue[ci], 0.78, r === lane ? 0.62 : 0.52);
+        else blockColor = baseColor.clone().multiplyScalar(shade);
+        if (r === lane && wetCols[ci]) blockColor = blockColor.clone().lerp(wetTint, 0.22);   // destaque fraco, não estourado
+        var isGoal = ci === len - 1;
+        if (isGoal) blockColor = new THREE.Color(0xffffff);   // bloco final do trecho: branco brilhante, marca o cristal
+        var mat = new THREE.MeshToonMaterial({
+          color: blockColor, gradientMap: toonGradient,
+          emissive: isGoal ? 0xffffff : 0x000000, emissiveIntensity: isGoal ? 0.55 : 0,
+          polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+        });
+        var block = new THREE.Mesh(boxGeo, mat);
+        var sideH = CFG.blockH + Math.max(0, heights[ci] + CFG.terrainRange + 2);
+        block.scale.y = sideH / CFG.blockH;
+        block.position.set(c, heights[ci] - sideH / 2, r - lane);
+        block.add(new THREE.LineSegments(edgeGeo, lineMat));
+        var blockOutline = new THREE.Mesh(boxGeo, blockOutlineMat);
+        blockOutline.scale.setScalar(1.01);
+        block.add(blockOutline);
+        if (isGoal && r === lane) {
+          var goalLight = new THREE.PointLight(0xfff7df, 0.4, 9, 1.8);
+          goalLight.position.set(0, -CFG.blockH * 0.4, 0);
+          block.add(goalLight);
+        }
+        scene.add(block);
+        block.__col = c;
+        block.__baseColorHex = mat.color.getHexString();
+        blockMeshes.push(block);
+        if (!rowMesh[r]) rowMesh[r] = [];
+        rowMesh[r][c] = block;
+        if (r === lane) { laneMesh[c] = block; laneColorHex[c] = '#' + mat.color.getHexString(); }
+        if (animate) {
+          var finalY = block.position.y;
+          block.position.y = finalY - RISE_DIST;
+          block.visible = false;   // fica invisível até a câmera chegar perto e a subida realmente começar
+          risingBlocks.push({ mesh: block, col: c, fromY: finalY - RISE_DIST, toY: finalY, delay: (ci / len) * RISE_WAVE, t: 0, active: false });
+        }
+      }
+    }
+  }
+  // espinhos: grupo de pontas num bloco — só aparece a partir de CFG.spikeLevel
+  function makeSpikeMesh() {
+    // bem maior e mais claro que antes: no cenário escuro, espinhos pequenos e foscos ficavam
+    // praticamente invisíveis — precisam ler como um perigo óbvio à distância.
+    var mat = new THREE.MeshToonMaterial({ color: COL.spike, gradientMap: toonGradient, emissive: 0xaa1010, emissiveIntensity: 0.7 });
+    var group = new THREE.Group();
+    var n = 6;
+    for (var k = 0; k < n; k++) {
+      var h = 0.4 + Math.random() * 0.22;
+      var cone = new THREE.Mesh(new THREE.ConeGeometry(0.13, h, 6), mat);
+      var ang = Math.random() * Math.PI * 2, rad = Math.random() * 0.26;
+      cone.position.set(Math.cos(ang) * rad, h / 2, Math.sin(ang) * rad);
+      cone.rotation.x = (Math.random() - 0.5) * 0.25;
+      cone.rotation.z = (Math.random() - 0.5) * 0.25;
+      group.add(cone);
+    }
+    var glow = new THREE.PointLight(COL.spike, 0.3, 3, 2);
+    glow.position.y = 0.3;
+    group.add(glow);
+    return group;
+  }
+  var spikes = [];   // { col, mesh, revealed }
+  // bloco flutuante: um trecho mais alto do lado do chão normal — caminho alternativo que o
+  // jogador escolhe (mais difícil de alcançar, mas pode evitar vão/espinho embaixo).
+  function makeFloatBlockMesh() {
+    var mat = new THREE.MeshToonMaterial({ color: 0xdde8a0, gradientMap: toonGradient, emissive: 0x2a2f10, emissiveIntensity: 0.18 });
+    var mesh = new THREE.Mesh(boxGeo, mat);
+    mesh.add(new THREE.LineSegments(edgeGeo, lineMat));
+    var outline = new THREE.Mesh(boxGeo, blockOutlineMat);
+    outline.scale.setScalar(1.01);
+    mesh.add(outline);
+    return mesh;
+  }
+  var floatBlocks = [];   // { col, mesh, revealed }
+  // gera e constrói o próximo trecho do mundo, logo depois do último que já existe
+  function appendChunk() {
+    // idx é o número absoluto da fase sendo criada (= nível - 1). chunkStarts.length sozinho não
+    // serve: ele encolhe conforme trechos antigos são podados da memória, o que fazia toda fase
+    // nova "esquecer" em que nível de verdade estava assim que a primeira poda acontecia — sem
+    // progressão de dificuldade e sem liberar cristal/espinho depois disso.
+    var idx = chunkStarts.length + chunkOffset;
+    var len = levelCols(idx + 1);
+    var startC = worldHeights.length;
+    var t = genTerrain(len, startC === 0 ? CFG.startCol : -9999);   // -9999: só a 1ª leva evita vão/parede perto do início
+    for (var i = 0; i < len; i++) {
+      worldHeights.push(t.heights[i]);
+      worldGaps.push(t.gaps[i]);
+      if (t.wetCols[i]) worldWetCols[startC + i] = true;
+    }
+    chunkStarts.push(startC);
+    chunkEnds.push(startC + len - 1);
+    CFG.cols = worldHeights.length;
+    buildChunk(startC, len, t.heights, t.gaps, t.wetCols, idx > 0);
+
+    // cristal de poder: 1 por fase a partir da 4ª, numa coluna sólida aleatória (fora do começo e do cristal-meta)
+    var candidateCols = [];
+    if (idx + 1 >= 4) for (var ci2 = 2; ci2 < len - 2; ci2++) if (!t.gaps[ci2]) candidateCols.push(ci2);
+    var crystalCol = null;
+    if (candidateCols.length) {
+      var pickCi = candidateCols[Math.floor(Math.random() * candidateCols.length)];
+      crystalCol = startC + pickCi;
+      var effects = Object.keys(CRYSTAL_EFFECTS);
+      var effect = effects[Math.floor(Math.random() * effects.length)];
+      var mesh = makeCrystalMesh(effect);
+      var baseY = t.heights[pickCi] + CFG.blockH / 2 + 0.7;
+      mesh.position.set(crystalCol, baseY, 0);
+      mesh.visible = idx === 0;   // o 1º trecho já começa visível; os seguintes esperam a câmera chegar perto
+      scene.add(mesh);
+      crystals.push({ col: crystalCol, effect: effect, mesh: mesh, collected: false, baseY: baseY, revealed: idx === 0 });
+    }
+
+    // espinhos: só a partir do nível CFG.spikeLevel, espalhados com uma folga mínima entre eles
+    if (idx + 1 > CFG.spikeLevel) {
+      var cooldown = CFG.spikeCooldown;
+      for (var sc = 2; sc < len - 2; sc++) {
+        if (t.gaps[sc] || (crystalCol !== null && startC + sc === crystalCol) || cooldown > 0) {
+          cooldown = Math.max(0, cooldown - 1); continue;
+        }
+        if (Math.random() < CFG.spikeChance) {
+          var spikeCol = startC + sc;
+          worldSpikes[spikeCol] = true;
+          var spikeMesh = makeSpikeMesh();
+          spikeMesh.position.set(spikeCol, t.heights[sc], 0);   // exatamente na superfície do bloco, não acima
+          spikeMesh.visible = idx === 0;
+          scene.add(spikeMesh);
+          spikes.push({ col: spikeCol, mesh: spikeMesh, revealed: idx === 0 });
+          cooldown = CFG.spikeCooldown;
+        }
+      }
+    }
+
+    // caminho alternativo: um trecho de blocos flutuantes mais altos ao lado do chão normal
+    if (idx + 1 >= 2 && Math.random() < 0.6) {
+      var spanLen = 3 + Math.floor(Math.random() * 4);
+      var spanStart = 6 + Math.floor(Math.random() * Math.max(1, len - spanLen - 10));
+      for (var fc = spanStart; fc < spanStart + spanLen && fc < len - 3; fc++) {
+        var fcol = startC + fc;
+        if (crystalCol !== null && fcol === crystalCol) continue;
+        // altura alcançável de verdade: o pico real do pulo (considerando o deslocamento horizontal
+        // necessário pra chegar lá) é bem menor que o máximo teórico só-na-vertical — por isso
+        // antes o bloco flutuante ficava fora de alcance pra sempre, parecendo não ter colisão.
+        var floatY = t.heights[fc] + 1.0 + Math.random() * 0.3;
+        worldFloatHeights[fcol] = floatY;
+        var fmesh = makeFloatBlockMesh();
+        fmesh.position.set(fcol, floatY - CFG.blockH / 2, 0);
+        fmesh.visible = idx === 0;
+        scene.add(fmesh);
+        floatBlocks.push({ col: fcol, mesh: fmesh, revealed: idx === 0 });
+      }
+    }
+  }
+  // anima os blocos do trecho recém-construído subindo do limbo até a posição final, um a um
+  function updateRisingBlocks(dt) {
+    for (var i = risingBlocks.length - 1; i >= 0; i--) {
+      var rb = risingBlocks[i];
+      if (!rb.active) {
+        if (camX < rb.col - RISE_TRIGGER_DIST) continue;   // ainda longe demais pra câmera ver: só ativa o cronômetro quando estiver perto
+        rb.active = true;
+      }
+      rb.t += dt;
+      if (rb.t < rb.delay) continue;
+      if (!rb.mesh.visible) rb.mesh.visible = true;   // só aparece no instante exato em que começa a subir
+      var p = Math.min(1, (rb.t - rb.delay) / RISE_DUR);
+      var eased = 1 - Math.pow(1 - p, 3);
+      rb.mesh.position.y = rb.fromY + (rb.toY - rb.fromY) * eased;
+      if (p >= 1) risingBlocks.splice(i, 1);
+    }
+  }
+  // remove os trechos que já ficaram mais de 10 blocos pra trás do player
+  function pruneOldChunks() {
+    while (chunkStarts.length > 1 && col > chunkEnds[0] + 10) {
+      var s = chunkStarts.shift(), e = chunkEnds.shift();
+      chunkOffset++;
+      for (var i = blockMeshes.length - 1; i >= 0; i--) {
+        var b = blockMeshes[i];
+        if (b.__col >= s && b.__col <= e) {
+          scene.remove(b);
+          var bm = b.material;
+          if (Array.isArray(bm)) bm.forEach(function (m) { m.dispose(); }); else bm.dispose();
+          blockMeshes.splice(i, 1);
+        }
+      }
+      for (var c = s; c <= e; c++) {
+        laneMesh[c] = null;
+        for (var rr = 0; rr < CFG.rows; rr++) {
+          if (rowMesh[rr]) rowMesh[rr][c] = null;
+          (function (rr2) {
+            ['top', 'L', 'R'].forEach(function (f) {
+              var key = c + '_' + f + (rr2 === lane ? '' : '_' + rr2);
+              if (faceCanvas[key]) { faceCanvas[key].disposed = true; faceCanvas[key].texture.dispose(); faceCanvas[key].material.dispose(); delete faceCanvas[key]; }
+            });
+          })(rr);
+        }
+      }
+      for (var ci3 = crystals.length - 1; ci3 >= 0; ci3--) {
+        if (crystals[ci3].col >= s && crystals[ci3].col <= e) { scene.remove(crystals[ci3].mesh); crystals.splice(ci3, 1); }
+      }
+      for (var si = spikes.length - 1; si >= 0; si--) {
+        if (spikes[si].col >= s && spikes[si].col <= e) { scene.remove(spikes[si].mesh); spikes.splice(si, 1); }
+      }
+    }
+  }
+  // chamada a cada quadro: constrói o próximo trecho quando faltam 10 blocos pro cristal atual,
+  // avança o número da fase ao cruzar cada marco, e poda o que já passou — tudo sem travar nada
+  function maintainWorld() {
+    // usa px (posição contínua) em vez de col (última coluna em que pousou): assim o marco da fase
+    // e a contagem avançam no instante em que o jogador realmente cruza o cristal, mesmo que ele
+    // esteja no ar pulando por cima dele e só vá pousar bem mais à frente.
+    if (chunkEnds.length && px >= chunkEnds[chunkEnds.length - 1] - 10) appendChunk();
+    while (passedChunks - chunkOffset < chunkEnds.length && px >= chunkEnds[passedChunks - chunkOffset]) passedChunks++;
+    var newLevel = passedChunks + 1;
+    if (newLevel !== level) {
+      level = newLevel; levelNumEl.textContent = level; levelUpFlashT = LEVELUP_SLOWMO_DURATION;
+      if (wet) { wet = false; player.material = dryMat; }   // a água não atravessa pra fase seguinte
+      clearCrystalBuff();   // efeito de movimento (pulo/tamanho) vale só até o fim da fase em que foi pego
+      // a vida extra NÃO expira ao mudar de fase — ela é uma segunda chance guardada, só é
+      // consumida de verdade quando o jogador morre (não importa em qual fase isso aconteça).
+    }
+    pruneOldChunks();
+  }
+  // refaz a aparência de tudo que já existe (troca de cenário) sem mexer no relevo/terreno
+  function rebuildVisual() {
+    for (var i = 0; i < blockMeshes.length; i++) {
+      scene.remove(blockMeshes[i]);
+      var bm = blockMeshes[i].material;
+      if (Array.isArray(bm)) bm.forEach(function (m) { m.dispose(); }); else bm.dispose();
+    }
+    blockMeshes = []; laneMesh = []; laneColorHex = []; rowMesh = [];
+    for (var key in faceCanvas) { faceCanvas[key].disposed = true; faceCanvas[key].texture.dispose(); faceCanvas[key].material.dispose(); }
+    faceCanvas = {}; inkAnimatedEntries.length = 0;
+    for (var ci = 0; ci < chunkStarts.length; ci++) {
+      var s = chunkStarts[ci], e = chunkEnds[ci], len = e - s + 1;
+      var heights = worldHeights.slice(s, e + 1), gaps = worldGaps.slice(s, e + 1), wet = {};
+      for (var k = 0; k < len; k++) if (worldWetCols[s + k]) wet[k] = true;
+      buildChunk(s, len, heights, gaps, wet);
+    }
+  }
+  // limpa tudo e recomeça do zero — usado ao morrer e na primeira vez que aperta "jogar"
+  function resetWorld() {
+    for (var i = 0; i < blockMeshes.length; i++) {
+      scene.remove(blockMeshes[i]);
+      var bm = blockMeshes[i].material;
+      if (Array.isArray(bm)) bm.forEach(function (m) { m.dispose(); }); else bm.dispose();
+    }
+    for (var key in faceCanvas) { faceCanvas[key].disposed = true; faceCanvas[key].texture.dispose(); faceCanvas[key].material.dispose(); }
+    faceCanvas = {}; inkAnimatedEntries.length = 0; blockMeshes = []; laneMesh = []; laneColorHex = []; rowMesh = [];
+    worldHeights = []; worldGaps = []; worldWetCols = {}; worldSpikes = {}; worldFloatHeights = {};
+    chunkStarts = []; chunkEnds = []; passedChunks = 0; chunkOffset = 0; level = 1;
+    risingBlocks = []; levelUpFlashT = 0;
+    crystals.forEach(function (c) { scene.remove(c.mesh); }); crystals = [];
+    spikes.forEach(function (s) { scene.remove(s.mesh); }); spikes = [];
+    floatBlocks.forEach(function (f) { scene.remove(f.mesh); }); floatBlocks = [];
+    clearCrystalBuff();
+    hasExtraLife = false; updateLivesUI();
+    appendChunk();
+    col = CFG.startCol;
+    px = col; groundNow = worldHeights[col]; tilt = 0; land = 1; rest = 0;
+    startSkyDrop();
+    charge = null; wallContactKey = null; wallGaveUp = false;
+    wet = false; player.material = dryMat;
+    clearDrips();
+    camX = px;
+    levelNumEl.textContent = level;
+  }
+  // começo/reinício: o player cai do céu até o chão em vez de simplesmente aparecer já parado —
+  // reaproveita a física normal de queda, só muda o ponto de partida (bem mais alto) e deixa o
+  // próprio pouso (já existente) cuidar do resto.
+  function startSkyDrop() {
+    py = groundNow + 7.5;
+    camY = py;
+    air = { vx: 0, vy: 0, dir: 1 };
+    squashY = 1; targetSquash = 1; squashVel = 0;   // sem isso, o player aparecia achatado por um
+    // quadro com o esticão/aperto que tinha sobrado da morte/pouso anterior, antes de cair de novo
+  }
+  // perdeu uma vida mas ainda sobrou: volta pro começo da fase atual, sem recriar o mundo nem
+  // perder o progresso de fases já passadas
+  function respawnInPhase() {
+    var idx = passedChunks - chunkOffset;
+    var startC = (idx >= 0 && idx < chunkStarts.length) ? chunkStarts[idx] : CFG.startCol;
+    // o cristal dessa fase (se já tinha sido pego) volta a aparecer, já que a fase recomeça
+    for (var i = 0; i < crystals.length; i++) {
+      var c = crystals[i];
+      if (c.col >= startC && c.collected) { c.collected = false; if (c.revealed) c.mesh.visible = true; }
+    }
+    clearCrystalBuff();
+    col = startC;
+    px = col; groundNow = worldHeights[col]; tilt = 0; land = 1; rest = 0;
+    startSkyDrop();
+    charge = null; wallContactKey = null; wallGaveUp = false;
+    wet = false; player.material = dryMat;
+    clearDrips();
+    camX = px;
+  }
+
+  // ---------- Jogador ----------
+  var S = CFG.playerSize;
+  var playerColor = new THREE.Color(COL.player);
+  var playerGeo = new THREE.BoxGeometry(S, S, S);
+  var dryMat = new THREE.MeshToonMaterial({ color: playerColor, gradientMap: toonGradient, emissive: 0x3a2200 });
+  // molhado: mesma cor do player (não muda), só um brilho mais fraco que o seco — o emissive mais
+  // forte de antes deixava o player estourado/lavado em vez de só parecer "molhado".
+  var wetMat = new THREE.MeshToonMaterial({ color: playerColor, gradientMap: toonGradient, emissive: 0x160f04 });
+  var player = new THREE.Mesh(playerGeo, dryMat);
+  player.visible = false;
+  scene.add(player);
+  var outlineMat = new THREE.MeshBasicMaterial({ color: COL.outline, side: THREE.BackSide, transparent: true, opacity: 0.4, depthWrite: false });
+  var playerOutline = new THREE.Mesh(playerGeo, outlineMat);
+  playerOutline.scale.setScalar(1.05);
+  player.add(playerOutline);
+  var shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(S * 0.62, 24),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false })
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.visible = false;
+  scene.add(shadow);
+  function setPlayerColor(hex) {
+    playerColor.set(hex);
+    dryMat.color.set(hex);
+    wetMat.color.set(hex);
+    // A tinta usa exatamente a cor selecionada para o jogador.
+    syncPaintColor();
+    colorBtn.style.background = hex;
+  }
+
+  // ---------- Destaque de oclusão: contorno ao redor do player, visível através da parede ----------
+  var xrayMat = new THREE.MeshBasicMaterial({ color: COL.outline, side: THREE.BackSide, transparent: true, depthTest: false, opacity: 0 });
+  var xrayOutline = new THREE.Mesh(playerGeo, xrayMat);
+  xrayOutline.scale.setScalar(1.14);
+  xrayOutline.renderOrder = 999;
+  player.add(xrayOutline);
+  var occRay = new THREE.Raycaster();
+  var occDir = new THREE.Vector3();
+  var markerOpacity = 0;
+
+  // ---------- Resíduos gosmentos (ao cair de muito alto) ----------
+  var goos = [];
+  function spawnGoo(x, y, z) {
+    var group = new THREE.Group();
+    var blobN = 3 + Math.floor(Math.random() * 2);
+    for (var i = 0; i < blobN; i++) {
+      var mat = new THREE.MeshToonMaterial({ color: COL.goo, gradientMap: toonGradient, transparent: true, opacity: 0.88 });
+      var m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + Math.random() * 0.1, 1), mat);
+      m.scale.set(1 + Math.random() * 0.5, 0.16 + Math.random() * 0.1, 1 + Math.random() * 0.5);
+      m.position.set((Math.random() - 0.5) * 0.4, 0, (Math.random() - 0.5) * 0.3);
+      m.rotation.y = Math.random() * Math.PI;
+      group.add(m);
+    }
+    group.position.set(x, y + 0.01, z);
+    scene.add(group);
+    goos.push({ group: group, t: 0 });
+  }
+  function updateGoo(dt) {
+    for (var i = goos.length - 1; i >= 0; i--) {
+      var g = goos[i];
+      g.t += dt;
+      var fadeStart = CFG.gooLife - CFG.gooFade;
+      var op = g.t <= fadeStart ? 0.88 : Math.max(0, 0.88 * (1 - (g.t - fadeStart) / CFG.gooFade));
+      g.group.children.forEach(function (m) { m.material.opacity = op; });
+      if (g.t >= CFG.gooLife) {
+        g.group.children.forEach(function (m) { m.geometry.dispose(); m.material.dispose(); });
+        scene.remove(g.group);
+        goos.splice(i, 1);
+      }
+    }
+  }
+
+  // ---------- Tinta de superfície: cobertura orgânica contínua ----------
+  // Cada impacto gera UMA forma em coordenadas da superfície. A mesma forma é recortada
+  // nas texturas dos blocos vizinhos; assim os pixels dos dois lados da junta coincidem.
+  // Não há esferas nem geometria flutuando sobre o terreno.
+  var PAINT_RGB = [255, 178, 56];
+  var INK_SPREAD_DURATION = 0.42;
+  var inkAnimatedEntries = [];
+
+  function syncPaintColor() {
+    var hex = playerColor.getHex();
+    PAINT_RGB[0] = (hex >> 16) & 255;
+    PAINT_RGB[1] = (hex >> 8) & 255;
+    PAINT_RGB[2] = hex & 255;
+  }
+  syncPaintColor();
+
+  function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+  function inkColor(alpha) {
+    return 'rgba(' + PAINT_RGB[0] + ',' + PAINT_RGB[1] + ',' + PAINT_RGB[2] + ',' + alpha + ')';
+  }
+
+  // Template em coordenadas normalizadas: todos os blocos recebem a mesma geometria,
+  // apenas deslocada para seu próprio espaço UV. Isso evita descontinuidade na emenda.
+  function makeInkSplat(vertical) {
+    var count = 28, points = [], phase = Math.random() * Math.PI * 2;
+    for (var i = 0; i < count; i++) {
+      var a = phase + i / count * Math.PI * 2;
+      var variation = 0.78 + Math.random() * 0.44;
+      if (i % 5 === 0) variation *= 1.14;
+      if (i % 7 === 0) variation *= 0.84;
+      points.push({ a: a, r: variation });
+    }
+
+    // Braços mais longos e grossos atravessam as juntas entre blocos.
+    var arms = [], armCount = 5 + Math.floor(Math.random() * 3);
+    for (var a2 = 0; a2 < armCount; a2++) {
+      var angle = vertical
+        ? (Math.PI * 0.5 + (Math.random() - 0.5) * 1.05)
+        : Math.random() * Math.PI * 2;
+      arms.push({
+        angle: angle,
+        length: 1.05 + Math.random() * 0.85,
+        width: 0.13 + Math.random() * 0.10,
+        bend: (Math.random() - 0.5) * 0.24
+      });
+    }
+
+    var droplets = [], dropCount = 4 + Math.floor(Math.random() * 5);
+    for (var d = 0; d < dropCount; d++) {
+      var da = Math.random() * Math.PI * 2;
+      droplets.push({
+        angle: da,
+        distance: 1.18 + Math.random() * 0.78,
+        radius: 0.035 + Math.random() * 0.055,
+        stretch: 0.85 + Math.random() * 0.65
+      });
+    }
+    return {
+      points: points, arms: arms, droplets: droplets,
+      age: 0, duration: INK_SPREAD_DURATION + Math.random() * 0.10,
+      vertical: !!vertical,
+      // Congela a cor do respingo no momento em que ele é criado.
+      rgb: PAINT_RGB.slice()
+    };
+  }
+
+  function drawInkContour(ctx, splat, r) {
+    var pts = splat.points, n = pts.length;
+    ctx.beginPath();
+    for (var i = 0; i < n; i++) {
+      var p = pts[i], next = pts[(i + 1) % n];
+      var x1 = splat.x + Math.cos(p.a) * r * p.r;
+      var y1 = splat.y + Math.sin(p.a) * r * p.r;
+      var x2 = splat.x + Math.cos(next.a) * r * next.r;
+      var y2 = splat.y + Math.sin(next.a) * r * next.r;
+      var mx = (x1 + x2) * 0.5, my = (y1 + y2) * 0.5;
+      if (i === 0) ctx.moveTo(mx, my);
+      ctx.quadraticCurveTo(x1, y1, mx, my);
+    }
+    ctx.closePath();
+  }
+
+  function drawInkSplat(ctx, splat, progress) {
+    var eased = 1 - Math.pow(1 - clamp01(progress), 3);
+    var r = splat.radius * eased;
+    if (r < 0.5) return;
+    var rgb = splat.rgb || PAINT_RGB;
+    var color = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.97)';
+
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Primeiro os braços, depois o corpo: tudo faz parte da mesma mancha conectada.
+    for (var i = 0; i < splat.arms.length; i++) {
+      var arm = splat.arms[i];
+      var ca = Math.cos(arm.angle), sa = Math.sin(arm.angle);
+      var len = r * arm.length;
+      ctx.lineWidth = Math.max(1, r * arm.width);
+      ctx.beginPath();
+      ctx.moveTo(splat.x - ca * r * 0.10, splat.y - sa * r * 0.10);
+      ctx.quadraticCurveTo(
+        splat.x + ca * len * 0.58 - sa * len * arm.bend,
+        splat.y + sa * len * 0.58 + ca * len * arm.bend,
+        splat.x + ca * len,
+        splat.y + sa * len
+      );
+      ctx.stroke();
+    }
+
+    drawInkContour(ctx, splat, r);
+    ctx.fill();
+
+    // Respingos menores continuam usando a mesma cor do corpo principal.
+    for (var d = 0; d < splat.droplets.length; d++) {
+      var drop = splat.droplets[d];
+      var da = drop.angle;
+      var dist = r * drop.distance;
+      var dx = splat.x + Math.cos(da) * dist;
+      var dy = splat.y + Math.sin(da) * dist;
+      var dr = Math.max(1, r * drop.radius * eased);
+      ctx.beginPath();
+      ctx.ellipse(dx, dy, dr * drop.stretch, dr, da, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Reflexo discreto de tinta fresca.
+    if (progress > 0.55) {
+      var shine = (progress - 0.55) / 0.45;
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.22 * shine) + ')';
+      ctx.lineWidth = Math.max(1, r * 0.028);
+      ctx.beginPath();
+      ctx.moveTo(splat.x - r * 0.34, splat.y - r * 0.24);
+      ctx.quadraticCurveTo(splat.x - r * 0.10, splat.y - r * 0.43, splat.x + r * 0.16, splat.y - r * 0.31);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function redrawInkFace(entry) {
+    // A camada base já contém toda tinta cuja animação terminou. Assim, ao chegar um
+    // respingo novo, não precisamos redesenhar centenas de respingos antigos.
+    var ctx = entry.ctx, size = entry.canvas.width;
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(entry.baseCanvas, 0, 0, size, size);
+    for (var i = 0; i < entry.splats.length; i++) {
+      var splat = entry.splats[i];
+      drawInkSplat(ctx, splat, Math.min(1, splat.age / splat.duration));
+    }
+    entry.texture.needsUpdate = true;
+  }
+
+  function ensureFace(col, face, row) {
+    if (row == null) row = lane;
+    var key = col + '_' + face + (row === lane ? '' : '_' + row);
+    var entry = faceCanvas[key];
+    if (entry) return entry;
+    var mesh = row === lane ? laneMesh[col] : (rowMesh[row] && rowMesh[row][col]);
+    if (!mesh) return null;
+    var size = 160;
+    var baseHex = mesh.__baseColorHex || '3f6473';
+    // Camada permanente para a tinta já assentada e canvas visível para a textura.
+    // Isso evita redesenhar todo o histórico de pintura a cada novo impacto.
+    var baseCanvas = document.createElement('canvas'); baseCanvas.width = baseCanvas.height = size;
+    var baseCtx = baseCanvas.getContext('2d');
+    baseCtx.fillStyle = '#' + baseHex;
+    baseCtx.fillRect(0, 0, size, size);
+    var cvs = document.createElement('canvas'); cvs.width = cvs.height = size;
+    var ctx = cvs.getContext('2d');
+    ctx.drawImage(baseCanvas, 0, 0);
+    var tex = new THREE.CanvasTexture(cvs);
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    var mat = new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGradient, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    if (!Array.isArray(mesh.material)) {
+      var base = mesh.material;
+      mesh.material = [base, base, base, base, base, base];
+    }
+    var faceIdx = face === 'top' ? 2 : face === 'L' ? 1 : 0;
+    mesh.material[faceIdx] = mat;
+    entry = { canvas: cvs, ctx: ctx, baseCanvas: baseCanvas, baseCtx: baseCtx, texture: tex, material: mat, baseHex: baseHex, splats: [], disposed: false };
+    faceCanvas[key] = entry;
+    return entry;
+  }
+
+  function addInkSplatToFace(entry, template, centerU, centerV, radiusWorld) {
+    if (!entry || entry.disposed) return;
+    var size = entry.canvas.width;
+    var splat = {
+      x: centerU * size,
+      y: centerV * size,
+      radius: radiusWorld * size,
+      points: template.points,
+      arms: template.arms,
+      droplets: template.droplets,
+      age: template.age,
+      duration: template.duration,
+      vertical: template.vertical,
+      rgb: template.rgb
+    };
+    entry.splats.push(splat);
+    // Proteção para sequências de impactos muito rápidas: assenta os mais antigos
+    // antes de limitar a quantidade de animações simultâneas por face.
+    while (entry.splats.length > 48) {
+      var settled = entry.splats.shift();
+      drawInkSplat(entry.baseCtx, settled, 1);
+    }
+    if (inkAnimatedEntries.indexOf(entry) === -1) inkAnimatedEntries.push(entry);
+  }
+
+  // Aplica a mesma mancha global em todas as faces superiores atingidas. Como cada face
+  // desenha a forma original deslocada (e não um novo respingo aleatório), a tinta atravessa
+  // a junta sem quebrar o contorno. Blocos com diferença grande de altura não são conectados.
+  function paintTopSurface(col, row, u, v, scale) {
+    var sourceHeight = groundAt(col);
+    if (sourceHeight == null) return;
+    var centerX = col + clamp01(u);
+    var centerY = row + clamp01(v);
+    var radiusWorld = Math.max(0.30, Math.min(0.48, 0.29 + scale * 0.25));
+    var template = makeInkSplat(false);
+    var reach = radiusWorld * 2.10;
+    var minCol = Math.floor(centerX - reach);
+    var maxCol = Math.floor(centerX + reach);
+    var minRow = Math.max(0, Math.floor(centerY - reach));
+    var maxRow = Math.min(CFG.rows - 1, Math.floor(centerY + reach));
+    var touched = [];
+
+    for (var c = minCol; c <= maxCol; c++) {
+      var h = groundAt(c);
+      if (h == null || Math.abs(h - sourceHeight) > 0.22) continue;
+      for (var r = minRow; r <= maxRow; r++) {
+        if (!rowMesh[r] || !rowMesh[r][c]) continue;
+        var entry = ensureFace(c, 'top', r);
+        if (!entry) continue;
+        // centerU/V podem ficar fora de 0..1: o Canvas recorta naturalmente na borda.
+        addInkSplatToFace(entry, template, centerX - c, centerY - r, radiusWorld);
+        if (touched.indexOf(entry) === -1) touched.push(entry);
+      }
+    }
+    for (var i = 0; i < touched.length; i++) redrawInkFace(touched[i]);
+
+    // Se o bloco vizinho for mais baixo, a tinta também alcança a parede vertical exposta.
+    if (depthSafe(scale)) {
+      var leftHeight = groundAt(col - 1), rightHeight = groundAt(col + 1);
+      if (leftHeight != null && leftHeight < sourceHeight - 0.22 && u < 0.48) {
+        paintOnWall(col, 'L', 0.06, scale * 0.8, true);
+      }
+      if (rightHeight != null && rightHeight < sourceHeight - 0.22 && u > 0.52) {
+        paintOnWall(col, 'R', 0.06, scale * 0.8, true);
+      }
+    }
+  }
+
+  function depthSafe(scale) { return scale > 0.01; }
+
+  function addWallSplat(entry, x, y, radius, template) {
+    if (!entry || entry.disposed) return;
+    var size = entry.canvas.width;
+    var splat = {
+      x: x, y: y, radius: radius,
+      points: template.points, arms: template.arms, droplets: template.droplets,
+      age: 0, duration: template.duration, vertical: true, rgb: template.rgb
+    };
+    entry.splats.push(splat);
+    while (entry.splats.length > 48) {
+      var settled = entry.splats.shift();
+      drawInkSplat(entry.baseCtx, settled, 1);
+    }
+    if (inkAnimatedEntries.indexOf(entry) === -1) inkAnimatedEntries.push(entry);
+  }
+
+  function updateInk(dt) {
+    for (var i = inkAnimatedEntries.length - 1; i >= 0; i--) {
+      var entry = inkAnimatedEntries[i];
+      if (!entry || entry.disposed) { inkAnimatedEntries.splice(i, 1); continue; }
+      var changed = false;
+      for (var s = entry.splats.length - 1; s >= 0; s--) {
+        var splat = entry.splats[s];
+        splat.age = Math.min(splat.duration, splat.age + dt);
+        changed = true;
+        if (splat.age >= splat.duration) {
+          // A animação terminou: desenha uma única vez na camada permanente e remove
+          // o objeto da lista dinâmica. O resultado visual permanece na textura.
+          drawInkSplat(entry.baseCtx, splat, 1);
+          entry.splats.splice(s, 1);
+        }
+      }
+      if (changed) redrawInkFace(entry); // uma atualização de CanvasTexture por face/quadro
+      if (entry.splats.length === 0) inkAnimatedEntries.splice(i, 1);
+    }
+  }
+
+  function paintOnWall(col, face, v, scale, dripFromImpact) {
+    var top = groundAt(col);
+    if (top == null) return;
+    var entry = ensureFace(col, face, lane);
+    if (!entry) return;
+    var size = entry.canvas.width;
+    var radius = size * Math.max(0.10, Math.min(0.24, 0.10 + scale * 0.42));
+    var x = size * 0.5;
+    var y = size * clamp01(v);
+    var template = makeInkSplat(true);
+    addWallSplat(entry, x, y, radius, template);
+    if (dripFromImpact) {
+      // Um rastro estreito continua a mancha pela parede abaixo.
+      var drip = makeInkSplat(true);
+      drip.arms = drip.arms.slice(0, 2);
+      drip.arms[0].angle = Math.PI * 0.5;
+      drip.arms[0].length = 1.8;
+      drip.arms[0].width = 0.20;
+      addWallSplat(entry, x + (Math.random() - 0.5) * radius * 0.18, Math.min(size - 2, y + radius * 0.38), radius * 0.42, drip);
+    }
+  }
+
+  function paintGround(col, u, v, scale, depth, colorShade, row) {
+    if (groundAt(col) == null) return;
+    if (row == null) row = lane;
+    paintTopSurface(col, row, u, v, scale);
+  }
+
+  function spill(col, dir, v, scale, depth, row) {
+    // Mantido como adaptador para chamadas antigas; a cobertura superior agora atravessa
+    // as juntas no paintTopSurface, e só a queda de nível gera tinta na parede.
+    if (row == null) row = lane;
+    var myTop = worldHeights[col];
+    var nextTop = groundAt(col + dir);
+    if (nextTop != null && nextTop < myTop - 0.22) {
+      paintOnWall(col, dir > 0 ? 'R' : 'L', 0.05, scale, true);
+    } else if (nextTop != null && Math.abs(nextTop - myTop) <= 0.22) {
+      paintGround(col + dir, dir > 0 ? 0.04 : 0.96, v, scale * 0.9, (depth || 0) + 1, null, row);
+    }
+  }
+
+  // ---------- Pingos soltos no ar pelo modo molhado ----------
+  var dripTex = (function () {
+    var size = 48;
+    var cvs = document.createElement('canvas'); cvs.width = cvs.height = size;
+    var ctx = cvs.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(size * 0.5, size * 0.56, size * 0.3, size * 0.36, 0, 0, Math.PI * 2);
+    ctx.fill();
+    return new THREE.CanvasTexture(cvs);
+  })();
+  var drips = [];
+  function spawnDrip(x, y, z, vx, vy, vz) {
+    var shade = 0.8 + Math.random() * 0.28;
+    var mat = new THREE.SpriteMaterial({ map: dripTex, color: playerColor.clone().multiplyScalar(shade), transparent: true, depthWrite: false });
+    var spr = new THREE.Sprite(mat);
+    var s = 0.08 + Math.random() * 0.05;
+    spr.scale.set(s, s, 1);
+    spr.position.set(x, y, z);
+    scene.add(spr);
+    drips.push({ mesh: spr, x: x, y: y, z: z, vx: vx, vy: vy, vz: vz });
+  }
+  function updateDrips(dt) {
+    for (var i = drips.length - 1; i >= 0; i--) {
+      var d = drips[i];
+      d.vy -= CFG.gravity * dt;
+      d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      var col2 = Math.round(d.x);
+      var g = groundAt(col2);
+      var gone = false;
+      if (g != null && d.y <= g && d.vy <= 0) {
+        paintGround(col2, d.x - (col2 - 0.5), Math.max(0, Math.min(1, d.z + 0.5)), CFG.wetDripScale * (0.6 + Math.random() * 0.7));
+        gone = true;
+      } else if (d.y < CFG.fallOutY) gone = true;
+      if (gone) {
+        scene.remove(d.mesh);
+        d.mesh.material.dispose();
+        drips.splice(i, 1);
+      } else d.mesh.position.set(d.x, d.y, d.z);
+    }
+  }
+  function clearDrips() {
+    drips.forEach(function (d) { scene.remove(d.mesh); d.mesh.material.dispose(); });
+    drips.length = 0;
+  }
+
+  // ---------- Estado ----------
+  var col = 0, px = 0, py = 0, tilt = 0, groundNow = 0;
+  var air = null, land = 1, rest = 0, impactT = null, wallContactKey = null, wallGaveUp = false;
+  var wet = false;
+  var charge = null, holds = [];
+  var camX = 0, camY = 0, camBob = 0, camSway = 0, prevPx = 0;
+  var gameStarted = false, titleScrollX = 0;
+  var transitioning = null, transitionT = 0;
+  var levelUpFlashT = 0, LEVELUP_SLOWMO_DURATION = 1.2;
+  var wipeScreen = document.getElementById('wipeScreen');
+  var DEATH_GRAY_HOLD = 0.4, DEATH_WIPE_DUR = 0.5;
+  var deathResetDone = false;
+
+  function grounded() { return !air && land >= 1 && rest <= 0; }
+
+  // ---------- Transição ao morrer: fica cinza, depois uma tela preta varre da direita pra
+  // esquerda cobrindo tudo — o reinício/respawn acontece escondido atrás dela — e a mesma tela
+  // preta termina de sair pela esquerda, revelando o jogo já pronto. Tudo automático, sem toque.
+  function startDeathTransition() {
+    transitioning = 'death'; transitionT = 0; deathResetDone = false;
+    canvas.classList.add('grayscale');
+    wipeScreen.hidden = false;
+    wipeScreen.style.transform = 'translateX(100%)';
+  }
+  // ---------- Entrada: teclado + toque/mouse ----------
+  function press(id, dir) {
+    if (!gameStarted || transitioning) return;
+    holds = holds.filter(function (h) { return h.id !== id; });
+    holds.push({ id: id, dir: dir });
+    if (!charge && grounded()) charge = { dir: dir, id: id, t: 0 };
+  }
+  function release(id) {
+    holds = holds.filter(function (h) { return h.id !== id; });
+    if (charge && charge.id === id) { jump(charge.dir, charge.t); charge = null; }
+  }
+  var KEYS = { ArrowLeft: -1, a: -1, A: -1, ArrowRight: 1, d: 1, D: 1 };
+  window.addEventListener('keydown', function (e) {
+    var d = KEYS[e.key];
+    if (!d) return;
+    e.preventDefault();
+    if (!e.repeat) press('k' + d, d);
+  });
+  window.addEventListener('keyup', function (e) {
+    var d = KEYS[e.key];
+    if (d) release('k' + d);
+  });
+  function resetInput() { holds = []; charge = null; }
+  window.addEventListener('blur', resetInput);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { resetInput(); return; }
+    // volta a ficar visível: recupera o foco do teclado pro canvas — sem isso, depois de sair e
+    // voltar (comum em artifact embutido num iframe), as teclas passam a ir pra fora do jogo.
+    resetInput();
+    if (gameStarted) canvas.focus();
+  });
+  window.addEventListener('focus', function () { if (gameStarted) canvas.focus(); });
+
+  canvas.addEventListener('pointerdown', function (e) {
+    if (!gameStarted) return;
+    e.preventDefault();
+    canvas.focus();
+    if (transitioning) return;   // morte agora é automática — nenhum toque interrompe ou acelera
+    var rect = canvas.getBoundingClientRect();
+    press('p' + e.pointerId, e.clientX - rect.left < rect.width / 2 ? -1 : 1);
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (t) {
+    canvas.addEventListener(t, function (e) { release('p' + e.pointerId); });
+  });
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // ---------- Tela inicial: prévia decorativa independente do mundo real do jogo ----------
+  var titlePreviewLen = 40;
+  var titleTerrain = genTerrain(titlePreviewLen, CFG.startCol);
+  var titleBlocks = [];
+  function buildTitlePreview() {
+    titleTerrain = genTerrain(titlePreviewLen, CFG.startCol);
+    titleBlocks.forEach(function (b) { scene.remove(b); b.material.dispose(); });
+    titleBlocks = [];
+    var colHue = new Array(titlePreviewLen);
+    if (scenario === 'colorido') for (var ch = 0; ch < titlePreviewLen; ch++) colHue[ch] = Math.random();
+    for (var c = 0; c < titlePreviewLen; c++) {
+      if (titleTerrain.gaps[c]) continue;
+      var blockColor;
+      if (scenario === 'pastel') blockColor = new THREE.Color(0xcdc0a3);
+      else if (scenario === 'colorido') blockColor = new THREE.Color().setHSL(colHue[c], 0.78, 0.6);
+      else blockColor = baseColor.clone().multiplyScalar(1.02);
+      var mat = new THREE.MeshToonMaterial({ color: blockColor, gradientMap: toonGradient });
+      var block = new THREE.Mesh(boxGeo, mat);
+      var sideH = CFG.blockH + Math.max(0, titleTerrain.heights[c] + CFG.terrainRange + 2);
+      block.scale.y = sideH / CFG.blockH;
+      block.position.set(c, titleTerrain.heights[c] - sideH / 2, 0);
+      scene.add(block);
+      titleBlocks.push(block);
+    }
+  }
+  buildTitlePreview();
+
+  // ---------- Tela inicial: estilo de cenário e cor do player ----------
+  var SCENARIOS = ['default', 'pastel', 'colorido'];
+  var SWATCH_COLORS = ['#ffb238', '#ff5c7a', '#5cc9ff', '#7cff8a', '#c58cff', '#ffffff'];
+  var styleBtn = document.getElementById('styleBtn'), colorBtn = document.getElementById('colorBtn');
+  function paintStyleBtn() {
+    if (scenario === 'pastel') styleBtn.style.background = '#f1ead9';
+    else if (scenario === 'colorido') styleBtn.style.background = 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)';
+    else styleBtn.style.background = 'var(--stone)';
+  }
+  paintStyleBtn();
+  colorBtn.style.background = '#ffb238';
+  styleBtn.addEventListener('pointerdown', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    scenario = SCENARIOS[(SCENARIOS.indexOf(scenario) + 1) % SCENARIOS.length];
+    paintStyleBtn();
+    if (gameStarted) rebuildVisual(); else buildTitlePreview();
+  });
+  colorBtn.addEventListener('pointerdown', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    var cur = SWATCH_COLORS.indexOf('#' + playerColor.getHexString());
+    setPlayerColor(SWATCH_COLORS[(cur + 1) % SWATCH_COLORS.length]);
+  });
+  var titleScreen = document.getElementById('titleScreen'), playBtn = document.getElementById('playBtn');
+  var levelNumEl = document.getElementById('levelNum');
+  var livesNumEl = document.getElementById('livesNum');
+  function updateLivesUI() { livesNumEl.textContent = hasExtraLife ? '♥♥' : '♥'; }
+  function actuallyStartGame() {
+    gameStarted = true;
+    titleScreen.hidden = true;
+    canvas.classList.remove('dim');
+    player.visible = true; shadow.visible = true;
+    titleBlocks.forEach(function (b) { scene.remove(b); b.material.dispose(); });
+    titleBlocks = [];
+    resetWorld();
+    levelNumEl.hidden = false;
+    livesNumEl.hidden = false;
+    canvas.focus();
+  }
+  playBtn.addEventListener('pointerdown', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    if (transitioning) return;
+    // mesma cortina preta da morte, só que entra e sai pelo lado oposto (esquerda pra direita) —
+    // o jogo de verdade só começa (actuallyStartGame) com a tela 100% coberta, escondido atrás dela.
+    transitioning = 'playwipe'; transitionT = 0; deathResetDone = false;
+    wipeScreen.hidden = false;
+    wipeScreen.style.transform = 'translateX(-100%)';
+  });
+
+  // ---------- Salto: velocidade inicial real, a trajetória é simulada quadro a quadro ----------
+  function jump(d, heldTime) {
+    if (!grounded()) return;
+    // toque rápido (sem segurar o bastante pra sair da zona morta) já sai com um pulo curto
+    // e confiável — não precisa "carregar do zero": segurar mais continua escalando daqui pra cima.
+    var power = Math.max(0, Math.min((heldTime - CFG.chargeDeadzone) / (CFG.chargeMax - CFG.chargeDeadzone), 1));
+    var vy0 = (CFG.vy0Min + (CFG.vy0Max - CFG.vy0Min) * power) * buffVyMult;
+    var vx0 = d * (CFG.vxMin + (CFG.vxMax - CFG.vxMin) * power) * buffVxMult;
+    air = { vx: vx0, vy: vy0, dir: d };
+    land = 1;
+    wallGaveUp = false;
+  }
+
+  // ---------- Simulação física: gravidade real + colisão contra o perfil do terreno ----------
+  var squashY = 1, targetSquash = 1, squashVel = 0;
+
+  function update(dt) {
+    if (rest > 0) rest -= dt;
+    if (impactT != null) { impactT += dt; if (impactT >= CFG.wallImpactTime) impactT = null; }
+    // se o dedo já estava pressionado antes mesmo do pouso, a carga começa sozinha assim que
+    // o jogador toca o chão de novo — sem isso, segurar durante o pulo exigia soltar e apertar
+    // de novo depois de aterrissar pra conseguir carregar o próximo pulo.
+    if (!charge && !air && holds.length && grounded()) {
+      var h = holds[holds.length - 1];
+      charge = { dir: h.dir, id: h.id, t: 0 };
+    }
+
+    if (air) {
+      var touchedWall = false;
+      if (wet && Math.random() < CFG.wetDripRate * dt) {
+        spawnDrip(px, py, 0, air.vx * 0.3 + (Math.random() - 0.5) * 1.2, (Math.random() - 0.3) * 1.5, (Math.random() - 0.5) * 0.8);
+      }
+      air.vy -= CFG.gravity * buffGravityMult * dt;
+      var moveDir = air.vx > 0 ? 1 : (air.vx < 0 ? -1 : (air.dir || 1));
+      var newPx = px + air.vx * dt;
+      var newPy = py + air.vy * dt;
+      var colFront = Math.round(newPx + air.dir * (S / 2));
+      var colBack = Math.round(newPx - air.dir * (S / 2));
+      var topFront = surfaceAt(colFront, py), topBack = surfaceAt(colBack, py);
+      var testCol, topY;
+      // prefere sempre a coluna da FRENTE quando ela existe: usar a mais alta entre frente/trás
+      // fazia o pé de trás "vencer" toda vez que o terreno descia, empurrando o jogador pra trás
+      // em vez de deixar a queda continuar pra frente, que é o esperado na maioria dos casos.
+      if (topFront != null) { testCol = colFront; topY = topFront; }
+      else if (topBack != null) { testCol = colBack; topY = topBack; }
+      else { testCol = colFront; topY = null; }
+      var landed = false;
+      if (topY != null) {
+        if (py >= topY && newPy < topY) {
+          // quanto mais alto caiu (maior a velocidade vertical no impacto), maior o respingo de
+          // tinta — vale pra qualquer queda do jogo, não só a do início/reinício.
+          var fallSplat = 1 + Math.min(1.3, Math.max(0, (Math.abs(air.vy) - 3) * 0.09));
+          col = testCol; groundNow = topY; py = topY;
+          air = null; tilt = 0; land = 0; rest = CFG.hopRest;
+          landed = true;
+          paintGround(testCol, newPx - (testCol - 0.5), 0.5, (0.3 + Math.random() * 0.1) * (wet ? 1.6 : 1) * fallSplat);
+          if (wet) {
+            var splashN = 2 + Math.floor(Math.random() * 2);
+            for (var sp = 0; sp < splashN; sp++) {
+              spawnDrip(px, topY + 0.1, 0, (Math.random() - 0.5) * 2.4, 1 + Math.random() * 1.6, (Math.random() - 0.5) * 1.6);
+            }
+          }
+          if (worldWetCols[testCol]) { wet = true; player.material = wetMat; }   // fica molhado até o fim da fase, não seca sozinho
+          if (worldSpikes[testCol]) { startDeathTransition(); return; }   // espinho: morre na hora, mesmo em chão sólido
+        } else if (newPy < topY && testCol === colFront && !wallGaveUp) {
+          // só vira parede se for a coluna da FRENTE: se a frente é vão e sobrou só a coluna de
+          // trás (já ultrapassada pelo pé do jogador), não existe parede nenhuma ali — o jogador só
+          // errou o pouso adiante e deve continuar caindo de verdade, não travar numa parede fantasma.
+          var wallFace = moveDir > 0 ? 'L' : 'R';
+          var wallKey = testCol + wallFace;
+          if (wallContactKey !== wallKey) {
+            if (impactT == null) impactT = 0;
+            wallContactKey = wallKey; wallGaveUp = false;
+            var sideH = CFG.blockH + Math.max(0, worldHeights[testCol] + CFG.terrainRange + 2);
+            var vWall = Math.max(0, Math.min(1, (topY - py) / sideH));
+            paintOnWall(testCol, wallFace, vWall, (0.11 + Math.random() * 0.05) * (wet ? 1.5 : 1), true);
+          }
+          if (!wallGaveUp) {
+            if (air.vy <= 0) {
+              // já passou do ápice do pulo: não tem mais como subir até o topo da parede — desiste
+              // e ricocheteia pra trás uma vez, senão fica escorregando colado nela até cair no
+              // vazio (parecendo atravessar o bloco em vez de ter esbarrado nele).
+              newPx = testCol - moveDir * (0.5 + S / 2 + 0.002);
+              air.vx = -moveDir * Math.abs(air.vx) * 0.8;
+              air.dir = -moveDir;   // agora o "lado da frente" é o novo sentido do movimento (pra
+              // trás); sem isso a amostragem de colisão continuava testando como se ele ainda
+              // estivesse indo pra frente, batendo de novo na mesma parede e ping-pongando até
+              // a velocidade zerar e cair.
+              wallGaveUp = true;
+            } else {
+              // ainda subindo: segura a posição (sem matar o impulso) — pode dar tempo de limpar
+              // o topo da parede nos próximos quadros.
+              newPx = testCol - moveDir * (0.5 + S / 2 + 0.002);
+            }
+          }
+          touchedWall = true;
+        }
+      }
+      if (!landed) {
+        px = newPx; py = newPy;
+        var speed = Math.hypot(air.vx, air.vy);
+        var targetTilt = Math.max(-0.3, Math.min(0.3, Math.atan2(air.vy, Math.abs(air.vx) + 0.35) * -0.32 * moveDir));
+        tilt += (targetTilt - tilt) * (1 - Math.exp(-dt * 10));
+        targetSquash = 1 + Math.max(0, Math.min(0.22, speed * 0.018));
+        if (impactT != null) targetSquash -= 0.12 * (1 - impactT / CFG.wallImpactTime);
+        groundNow = topY != null ? topY : (groundAt(Math.round(px)) != null ? groundAt(Math.round(px)) : py);
+        if (py < CFG.fallOutY) {
+          var farH = null;
+          for (var s = 1; s <= 8; s++) { var hh = groundAt(testCol + (air.dir || 1) * s); if (hh != null) { farH = hh; break; } }
+          var gooH = farH != null ? Math.min(py + 1, farH) : py + 1;
+          spawnGoo(px, gooH, 0);
+          air = null;
+          startDeathTransition();
+        }
+      }
+      if (!touchedWall) wallContactKey = null;   // wallGaveUp só reseta num pulo novo (jump()) ou ao pousar — não aqui, senão voltaria a travar numa segunda parede no mesmo pulo
+    } else if (charge) {
+      charge.t += dt;
+      var cp = Math.max(0, Math.min((charge.t - CFG.chargeDeadzone) / (CFG.chargeMax - CFG.chargeDeadzone), 1));
+      targetSquash = 1 - CFG.squashMax * cp;
+      py = groundNow;   // groundNow já foi fixado no pouso (chão normal ou bloco flutuante) — não recalcula do zero
+      px += (col - px) * (1 - Math.exp(-dt * CFG.settleRate));
+    } else if (land < 1) {
+      land = Math.min(1, land + dt / 0.13);
+      targetSquash = 1 - 0.17 * Math.sin(Math.PI * land);
+      py = groundNow;
+      px += (col - px) * (1 - Math.exp(-dt * CFG.settleRate));
+    } else {
+      targetSquash = 1;
+      py = groundNow;
+      px += (col - px) * (1 - Math.exp(-dt * CFG.settleRate));
+    }
+
+    var springAcc = (targetSquash - squashY) * CFG.springK - squashVel * CFG.springDamp;
+    squashVel += springAcc * dt;
+    squashY += squashVel * dt;
+    buffScale += (buffScaleTarget - buffScale) * (1 - Math.exp(-dt * 3.2));   // cresce/encolhe suavemente, não pisca
+
+    var sxz = 1 / Math.sqrt(Math.max(squashY, 0.35)) * buffScale;
+    player.scale.set(sxz, squashY * buffScale, sxz);
+    player.position.set(px, py + (S * buffScale * Math.max(squashY, 0.35)) / 2, 0);
+    player.rotation.z = tilt;
+    checkCrystalPickup();
+
+    // a sombra segue sempre o chão de verdade embaixo da posição atual — não "groundNow", que
+    // durante um contato com parede vira a altura do TOPO da parede, fazendo a sombra piscar lá
+    // em cima (no bloco ao lado) em vez de ficar no chão sob o jogador.
+    var floorY = surfaceAt(Math.round(px), py);
+    var hasGroundRef = floorY != null;
+    var above = hasGroundRef ? Math.max(0, py - floorY) : 99;
+    var sh = Math.max(0, 1 - above * 1.1);
+    shadow.position.set(px, (hasGroundRef ? floorY : py) + 0.006, 0);
+    shadow.scale.set(sh * sxz, sh * sxz, 1);
+    shadow.material.opacity = 0.32 * sh;
+
+    updateGoo(dt);
+    updateDrips(dt);
+
+    camX += (px - camX) * (1 - Math.exp(-dt * 7));
+    camY += (py - camY) * (1 - Math.exp(-dt * CFG.camFollowRate));
+    var vel = dt > 0 ? (px - prevPx) / dt : 0;
+    prevPx = px;
+    var moveAmt = Math.min(Math.abs(vel) / 6, 1);
+    camBob += dt * 9 * (0.3 + moveAmt);
+    var swayTarget = moveAmt * (vel < 0 ? -1 : 1);
+    camSway += (swayTarget - camSway) * (1 - Math.exp(-dt * CFG.camSwayDecay));
+    placeCamera(moveAmt);
+
+    var playerWorldY = py + (S * Math.max(squashY, 0.35)) / 2;
+    occDir.set(camera.position.x - px, camera.position.y - playerWorldY, camera.position.z);
+    var distToCam = occDir.length();
+    occRay.set({ x: px, y: playerWorldY, z: 0 }, occDir.clone().normalize());
+    occRay.far = Math.max(0.01, distToCam - 0.3);
+    var blocked = occRay.intersectObjects(blockMeshes, false).length > 0;
+    markerOpacity += ((blocked ? 0.65 : 0) - markerOpacity) * (1 - Math.exp(-dt * 8));
+    xrayMat.opacity = markerOpacity;
+  }
+
+  // ---------- Câmera 2.5D ----------
+  var camDist = 9;
+  function placeCamera(moveAmt) {
+    var bob = Math.sin(camBob) * CFG.camBobAmp * moveAmt;
+    var cd = camDist * CFG.camDistMult;
+    var targetY = camY * 0.5 + 0.15;
+    camera.position.set(
+      camX + cd * Math.sin(CFG.camYaw),
+      targetY + cd * Math.sin(CFG.camPitch) + bob + CFG.camHeightExtra,
+      cd * Math.cos(CFG.camYaw)
+    );
+    camera.lookAt(camX, targetY, 0);
+    camera.rotateX(CFG.camViewTilt);
+    camera.rotateZ(camSway * CFG.camRollAmp);
+  }
+  function resize() {
+    var w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+    renderer.setSize(w, h, false);
+    var rw = w * renderer.getPixelRatio(), rh = h * renderer.getPixelRatio();
+    // A distorção é sutil; renderizar seu buffer em resolução um pouco menor reduz
+    // custo de GPU e largura de banda sem alterar a resolução final do canvas.
+    var fishScale = 0.82;
+    fishTarget.setSize(Math.max(1, Math.round(rw * fishScale)), Math.max(1, Math.round(rh * fishScale)));
+    fishMat.uniforms.aspect.value = w / h;
+    camera.aspect = w / h;
+    var perUnit = 2 * Math.tan((camera.fov * Math.PI / 180) / 2) * camera.aspect;
+    camDist = Math.max(9, 5.5 / perUnit);
+    scene.fog.near = Math.max(1, camDist - 3); scene.fog.far = camDist + 13;
+    camera.updateProjectionMatrix();
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+  window.addEventListener('resize', resize);
+
+  // ---------- Loop ----------
+  var prev = performance.now();
+  function frame(now) {
+    var dt = Math.min((now - prev) / 1000, 0.05);
+    prev = now;
+    if (transitioning === 'death' || transitioning === 'playwipe') {
+      // mesma cortina preta pros dois casos — só muda o lado (morte: direita->esquerda; jogar:
+      // esquerda->direita) e se tem a pausa cinza antes (só na morte).
+      var isDeath = transitioning === 'death';
+      var dir = isDeath ? 1 : -1;
+      var preHold = isDeath ? DEATH_GRAY_HOLD : 0;
+      transitionT += dt;
+      if (isDeath) updateGoo(dt * 0.15);
+      placeCamera(0);   // sem isso, a câmera ficava parada onde a prévia do título deixou,
+      // e ao revelar a cena o enquadramento ainda era o antigo — parecia o player já no chão.
+      if (transitionT < preHold) {
+        // só cinza por um instante, tela preta ainda esperando fora da tela
+      } else if (transitionT < preHold + DEATH_WIPE_DUR) {
+        var wipeInP = (transitionT - preHold) / DEATH_WIPE_DUR;
+        wipeScreen.style.transform = 'translateX(' + (dir * (100 - 100 * Math.min(1, wipeInP))) + '%)';
+      } else {
+        if (!deathResetDone) {
+          // tela 100% preta neste instante: já pode trocar tudo escondido atrás dela — reinicia/
+          // renasce (morte) ou de fato começa o jogo (jogar) — sem mostrar a troca em si.
+          deathResetDone = true;
+          if (isDeath) {
+            canvas.classList.remove('grayscale');
+            if (hasExtraLife) { hasExtraLife = false; updateLivesUI(); respawnInPhase(); }
+            else resetWorld();
+          } else {
+            actuallyStartGame();
+          }
+        }
+        var wipeOutP = (transitionT - preHold - DEATH_WIPE_DUR) / DEATH_WIPE_DUR;
+        if (wipeOutP >= 1) { wipeScreen.hidden = true; canvas.classList.remove('grayscale'); transitioning = null; }
+        else wipeScreen.style.transform = 'translateX(' + (-dir * 100 * wipeOutP) + '%)';
+      }
+    } else if (gameStarted) {
+      var timeScale = 1;
+      if (levelUpFlashT > 0) {
+        var slowP = 1 - levelUpFlashT / LEVELUP_SLOWMO_DURATION;
+        timeScale = 1 - 0.85 * Math.sin(Math.PI * Math.min(1, slowP));
+        levelUpFlashT = Math.max(0, levelUpFlashT - dt);
+      }
+      update(dt * timeScale);
+      maintainWorld();
+      updateRisingBlocks(dt * timeScale);
+      updateCrystals(dt * timeScale);
+      updateSpikes();
+      updateFloatBlocks();
+      updateInk(dt * timeScale);
+    } else {
+      // tela inicial: a câmera passeia por uma prévia decorativa independente (sem o player)
+      titleScrollX += dt * 1.3;
+      if (titleScrollX > titlePreviewLen - 8) { buildTitlePreview(); titleScrollX = CFG.startCol; }
+      var previewCol = Math.max(0, Math.min(titlePreviewLen - 1, Math.round(titleScrollX)));
+      camX += (titleScrollX - camX) * (1 - Math.exp(-dt * 2.2));
+      camY += (titleTerrain.heights[previewCol] - camY) * (1 - Math.exp(-dt * 2));
+      placeCamera(0);
+    }
+    renderer.setRenderTarget(fishTarget);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    renderer.render(fishScene, fishCam);
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
