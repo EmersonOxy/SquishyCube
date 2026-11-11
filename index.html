@@ -419,10 +419,17 @@
     return group;
   }
   var spikes = [];   // { col, mesh, revealed }
-  // bloco flutuante: um trecho mais alto do lado do chão normal — caminho alternativo que o
-  // jogador escolhe (mais difícil de alcançar, mas pode evitar vão/espinho embaixo).
-  function makeFloatBlockMesh() {
-    var mat = new THREE.MeshToonMaterial({ color: 0xdde8a0, gradientMap: toonGradient, emissive: 0x2a2f10, emissiveIntensity: 0.18 });
+  // Plataformas flutuantes com paleta de nuvens: azuis nas sombras e quase brancas no topo.
+  // A geometria base é compartilhada; cada plataforma varia sua escala no X/Z e na espessura.
+  var CLOUD_BLOCK_COLORS = [0x9bcff0, 0xb5def7, 0xcdeaff, 0xe5f5ff, 0xf7fcff];
+  function makeFloatBlockMesh(colorHex) {
+    var cloudColor = new THREE.Color(colorHex);
+    var mat = new THREE.MeshToonMaterial({
+      color: cloudColor,
+      gradientMap: toonGradient,
+      emissive: 0x274b68,
+      emissiveIntensity: 0.16
+    });
     var mesh = new THREE.Mesh(boxGeo, mat);
     mesh.add(new THREE.LineSegments(edgeGeo, lineMat));
     var outline = new THREE.Mesh(boxGeo, blockOutlineMat);
@@ -495,13 +502,20 @@
       for (var fc = spanStart; fc < spanStart + spanLen && fc < len - 3; fc++) {
         var fcol = startC + fc;
         if (crystalCol !== null && fcol === crystalCol) continue;
-        // altura alcançável de verdade: o pico real do pulo (considerando o deslocamento horizontal
-        // necessário pra chegar lá) é bem menor que o máximo teórico só-na-vertical — por isso
-        // antes o bloco flutuante ficava fora de alcance pra sempre, parecendo não ter colisão.
-        var floatY = t.heights[fc] + 1.0 + Math.random() * 0.3;
+        // Mantém a plataforma realmente suspensa: o fundo do bloco fica acima do chão.
+        // A altura total (folga + espessura) continua dentro do alcance de um salto carregado.
+        var cloudThicknessScale = 0.48 + Math.random() * 0.20;
+        var cloudHeight = CFG.blockH * cloudThicknessScale;
+        var cloudGap = 0.38 + Math.random() * 0.18;
+        var floatY = t.heights[fc] + cloudGap + cloudHeight;
         worldFloatHeights[fcol] = floatY;
-        var fmesh = makeFloatBlockMesh();
-        fmesh.position.set(fcol, floatY - CFG.blockH / 2, 0);
+
+        // Varia o tamanho dos quadrados sem abrir buracos impossíveis no caminho.
+        var cloudWidth = 0.98 + Math.random() * 0.38;
+        var cloudDepth = 0.86 + Math.random() * 0.46;
+        var fmesh = makeFloatBlockMesh(CLOUD_BLOCK_COLORS[Math.floor(Math.random() * CLOUD_BLOCK_COLORS.length)]);
+        fmesh.scale.set(cloudWidth, cloudThicknessScale, cloudDepth);
+        fmesh.position.set(fcol, floatY - cloudHeight / 2, (Math.random() - 0.5) * 0.08);
         fmesh.visible = idx === 0;
         scene.add(fmesh);
         floatBlocks.push({ col: fcol, mesh: fmesh, revealed: idx === 0 });
