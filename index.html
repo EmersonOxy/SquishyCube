@@ -42,58 +42,73 @@
   #titleScreen[hidden] { opacity: 0; pointer-events: none; display: flex; }
   .gameTitle {
     isolation: isolate; position: relative; display: inline-block;
-    margin: 0 0 22px; padding: .12em .16em .20em;
-    font-family: 'Modak', 'Arial Rounded MT Bold', sans-serif;
-    font-size: clamp(2.05rem, 7.2vw, 5.35rem);
-    font-weight: 400; line-height: 1.02;
-    letter-spacing: -.045em; white-space: nowrap; text-align: center;
-    transform: rotate(-2deg) scaleX(.97);
-    filter: drop-shadow(0 8px 8px rgba(0,0,0,.30));
+    margin: 0 0 24px; padding: .10em .14em .24em;
+    font-family: 'DynaPuff', 'Arial Rounded MT Bold', sans-serif;
+    font-size: clamp(2.15rem, 7.6vw, 5.45rem);
+    font-weight: 700; line-height: 1.02;
+    letter-spacing: -.065em; white-space: nowrap; text-align: center;
+    transform: rotate(-1.8deg);
+    filter: drop-shadow(0 8px 8px rgba(0,0,0,.28));
   }
-  /* Poça larga e irregular atrás do lettering, não uma faixa fina. */
+  /* Poça de slime larga e ondulada, atrás do nome. */
   .gameTitle::after {
     content: ''; position: absolute; z-index: -2;
-    left: -3.5%; right: -3.5%; top: -2%; bottom: -12%;
-    background: #f3d16f;
+    left: -4%; right: -4%; top: -1%; bottom: -13%;
+    background: #f5d575;
     border: 2px solid #ffe9a4;
-    border-radius: 47% 55% 39% 61% / 55% 41% 58% 45%;
-    transform: rotate(-1.5deg) scaleY(1.02);
-    box-shadow: 0 5px 0 rgba(120,93,36,.18), inset 0 3px 0 rgba(255,248,199,.38);
-  }
-  /* Sombra/contorno grosso no estilo do lettering da referência. */
-  .gameTitle::before {
-    content: attr(data-text); position: absolute; inset: .12em .16em .20em;
-    z-index: -1; color: #174a34;
-    font: inherit; letter-spacing: inherit;
-    -webkit-text-stroke: 10px #174a34;
-    paint-order: stroke fill;
-    text-shadow: 0 4px 0 #123d2b, 0 7px 0 rgba(8,35,26,.75);
-    transform: translateY(3px);
+    border-radius: 45% 56% 40% 60% / 54% 42% 62% 45%;
+    transform: rotate(-1.4deg) scaleY(1.04);
+    box-shadow: 0 5px 0 rgba(120,93,36,.18), inset 0 3px 0 rgba(255,248,199,.42);
   }
   .gameTitle .titleText {
-    position: relative; display: inline-block; z-index: 1;
-    color: #8ee4a2;
-    -webkit-text-fill-color: #8ee4a2;
+    position: relative; display: inline-flex; align-items: center;
+    z-index: 1; white-space: nowrap; line-height: .98;
+  }
+  /* Letras separadas: cada glifo recebe largura, peso e inclinação próprios. */
+  .gameTitle .letter {
+    position: relative; display: inline-block;
+    font-family: 'DynaPuff', sans-serif;
+    font-variation-settings: 'wdth' var(--width, 88), 'wght' var(--weight, 700);
+    color: #8de3a1;
+    background: linear-gradient(180deg, #e0ffe0 0%, #b3f4bd 18%, #86dfa0 48%, #68ca88 76%, #4aaa70 100%);
+    background-clip: text; -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
     -webkit-text-stroke: 3px #205f3e;
     paint-order: stroke fill;
-    text-shadow: 0 -2px 0 rgba(225,255,226,.45), 0 2px 0 rgba(18,76,47,.5);
+    text-shadow: 0 2px 0 #286e47, 0 4px 0 #174a34;
+    transform: rotate(var(--rot, 0deg)) translateY(var(--lift, 0)) scaleX(var(--sx, 1)) scaleY(var(--sy, 1));
+    transform-origin: 50% 80%;
+    margin-inline: -.012em;
   }
-  /* Pequenas variações de altura e inclinação quebram a uniformidade de fonte digital. */
-  .gameTitle .letter { display: inline-block; transform: rotate(var(--rot, 0deg)) translateY(var(--lift, 0)); }
-  .gameTitle .letter:nth-child(2n) { transform: rotate(-2deg) translateY(-.025em); }
-  .gameTitle .letter:nth-child(3n) { transform: rotate(1.7deg) translateY(.018em); }
-  .gameTitle .letter:nth-child(4n) { transform: rotate(-1deg) translateY(-.012em); }
+  /* Borda escura por caractere, desenhada sobre o contorno real de cada letra. */
+  .gameTitle .letter::before {
+    content: attr(data-char); position: absolute; inset: 0;
+    z-index: -1; color: #174a34; -webkit-text-fill-color: #174a34;
+    -webkit-text-stroke: 9px #174a34;
+    text-shadow: 0 4px 0 #123d2b, 0 7px 0 rgba(8,35,26,.7);
+  }
+  .gameTitle .letter:nth-child(1)  { --width: 88; --weight: 690; --rot: -5deg; --lift: .025em; --sx: 1.06; --sy: 1.02; }
+  .gameTitle .letter:nth-child(2)  { --width: 96; --weight: 700; --rot: 3deg;  --lift: -.015em; --sx: 1.02; --sy: 1.08; }
+  .gameTitle .letter:nth-child(3)  { --width: 82; --weight: 680; --rot: -2deg; --lift: .012em; --sx: 1.10; --sy: .98; }
+  .gameTitle .letter:nth-child(4)  { --width: 75; --weight: 700; --rot: 2deg;  --lift: -.035em; --sx: 1.13; --sy: 1.05; }
+  .gameTitle .letter:nth-child(5)  { --width: 91; --weight: 690; --rot: -3deg; --lift: .018em; --sx: 1.03; --sy: 1.04; }
+  .gameTitle .letter:nth-child(6)  { --width: 100; --weight: 700; --rot: 2deg; --lift: -.025em; --sx: 1.02; --sy: 1.07; }
+  .gameTitle .letter:nth-child(7)  { --width: 86; --weight: 680; --rot: -4deg; --lift: .012em; --sx: 1.07; --sy: 1.00; }
+  .gameTitle .letter:nth-child(8)  { --width: 91; --weight: 700; --rot: 3deg;  --lift: -.018em; --sx: 1.04; --sy: 1.06; }
+  .gameTitle .letter:nth-child(9)  { --width: 84; --weight: 690; --rot: -2deg; --lift: .020em; --sx: 1.08; --sy: 1.01; }
+  .gameTitle .letter:nth-child(10) { --width: 96; --weight: 700; --rot: 2deg;  --lift: -.028em; --sx: 1.02; --sy: 1.08; }
+  .gameTitle .letter:nth-child(11) { --width: 80; --weight: 680; --rot: -3deg; --lift: .008em; --sx: 1.10; --sy: 1.00; }
   .gameTitle .slimeDrip {
     position: absolute; z-index: 2; bottom: -.02em;
     width: .12em; border-radius: 40% 40% 58% 58% / 18% 18% 82% 82%;
-    background: linear-gradient(90deg, #43ad6b 0%, #a5f2b1 45%, #55c87d 100%);
+    background: linear-gradient(90deg, #43ad6b 0%, #b4f6bd 45%, #55c87d 100%);
     border: 1.5px solid #1d603e;
     box-shadow: 1px 2px 0 #16452f, inset 1px 0 1px rgba(255,255,255,.65);
     pointer-events: none;
   }
-  .gameTitle .dripA { left: 17%; height: .35em; }
-  .gameTitle .dripB { left: 49%; height: .24em; width: .10em; }
-  .gameTitle .dripC { left: 80%; height: .38em; width: .14em; }
+  .gameTitle .dripA { left: 16%; height: .34em; }
+  .gameTitle .dripB { left: 49%; height: .23em; width: .10em; }
+  .gameTitle .dripC { left: 80%; height: .37em; width: .14em; }
   .playBtn {
     pointer-events: auto; width: 220px; height: 54px; border-radius: 10px; border: none; cursor: pointer;
     background: linear-gradient(160deg, #f4f5f7 0%, #c7cbd1 35%, #8c929b 60%, #eef0f2 100%);
@@ -121,14 +136,14 @@
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Modak&family=Space+Grotesk:wght@600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DynaPuff:wdth,wght@75..100,400..700&family=Space+Grotesk:wght@600&display=swap">
 
 <div id="game">
   <canvas id="view" class="dim" tabindex="0" aria-label="Jogo: segure para carregar o salto e solte para pular de bloco em bloco"></canvas>
 
   <div id="titleScreen">
-    <h1 class="gameTitle" data-text="SQUISHYCUBE" aria-label="SquishyCube">
-      <span class="titleText" aria-hidden="true"><span class="letter">S</span><span class="letter">Q</span><span class="letter">U</span><span class="letter">I</span><span class="letter">S</span><span class="letter">H</span><span class="letter">Y</span><span class="letter">C</span><span class="letter">U</span><span class="letter">B</span><span class="letter">E</span></span>
+    <h1 class="gameTitle" aria-label="SquishyCube">
+      <span class="titleText" aria-hidden="true"><span class="letter" data-char="S">S</span><span class="letter" data-char="Q">Q</span><span class="letter" data-char="U">U</span><span class="letter" data-char="I">I</span><span class="letter" data-char="S">S</span><span class="letter" data-char="H">H</span><span class="letter" data-char="Y">Y</span><span class="letter" data-char="C">C</span><span class="letter" data-char="U">U</span><span class="letter" data-char="B">B</span><span class="letter" data-char="E">E</span></span>
       <span class="slimeDrip dripA" aria-hidden="true"></span>
       <span class="slimeDrip dripB" aria-hidden="true"></span>
       <span class="slimeDrip dripC" aria-hidden="true"></span>
