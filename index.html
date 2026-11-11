@@ -40,6 +40,28 @@
     pointer-events: none; transition: opacity .4s; padding: 16px;
   }
   #titleScreen[hidden] { opacity: 0; pointer-events: none; display: flex; }
+  .gameTitle {
+    position: relative; margin: 0 0 12px; padding: 0 8px;
+    font-family: 'Titan One', 'Arial Rounded MT Bold', sans-serif;
+    font-size: clamp(2.1rem, 8.7vw, 4.8rem); line-height: 1;
+    letter-spacing: -.035em; white-space: nowrap; text-align: center;
+    background: linear-gradient(180deg, #f4ffc9 0%, #c8ff83 24%, #75e45b 60%, #258e58 100%);
+    color: #a8f56d; -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; -webkit-text-stroke: 1.8px #164b3b;
+    paint-order: stroke fill;
+    filter: drop-shadow(0 4px 0 #174d3c) drop-shadow(0 10px 13px rgba(0,0,0,.48));
+    transform: rotate(-2deg);
+  }
+  .gameTitle .slimeDrip {
+    position: absolute; z-index: -1; bottom: -.18em;
+    width: .13em; border-radius: 0 0 .12em .12em;
+    background: linear-gradient(180deg, #9af36b 0%, #36b866 100%);
+    box-shadow: inset 2px 0 rgba(255,255,255,.28), 0 3px 3px rgba(0,0,0,.16);
+    -webkit-text-fill-color: initial; -webkit-text-stroke: 0;
+  }
+  .gameTitle .dripA { left: 21%; height: .34em; }
+  .gameTitle .dripB { left: 53%; height: .23em; width: .10em; }
+  .gameTitle .dripC { left: 79%; height: .29em; width: .12em; }
   .playBtn {
     pointer-events: auto; width: 220px; height: 54px; border-radius: 10px; border: none; cursor: pointer;
     background: linear-gradient(160deg, #f4f5f7 0%, #c7cbd1 35%, #8c929b 60%, #eef0f2 100%);
@@ -65,12 +87,17 @@
   }
   #livesNum[hidden] { display: none; }
 </style>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&family=Titan+One&display=swap">
 
 <div id="game">
   <canvas id="view" class="dim" tabindex="0" aria-label="Jogo: segure para carregar o salto e solte para pular de bloco em bloco"></canvas>
 
   <div id="titleScreen">
+    <h1 class="gameTitle">SquishyCube
+      <span class="slimeDrip dripA" aria-hidden="true"></span>
+      <span class="slimeDrip dripB" aria-hidden="true"></span>
+      <span class="slimeDrip dripC" aria-hidden="true"></span>
+    </h1>
     <button class="playBtn" id="playBtn" type="button" aria-label="Jogar">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l15 8-15 8z"/></svg>
     </button>
@@ -448,6 +475,29 @@
     var len = levelCols(idx + 1);
     var startC = worldHeights.length;
     var t = genTerrain(len, startC === 0 ? CFG.startCol : -9999);   // -9999: só a 1ª leva evita vão/parede perto do início
+
+    // Plataformas-nuvem avançadas só aparecem quando já existe um power-up de salto disponível.
+    // Cada trecho escolhe uma rota: alta (exige highjump) ou longa (exige fastjump ou highjump).
+    var cloudPlan = null;
+    if (idx + 1 >= 4 && Math.random() < 0.62) {
+      var spanLen = 3 + Math.floor(Math.random() * 4);
+      var minCloudStart = 12; // deixa espaço para o cristal aparecer antes da rota
+      var maxCloudStart = Math.max(minCloudStart, len - spanLen - 5);
+      var spanStart = minCloudStart + Math.floor(Math.random() * (maxCloudStart - minCloudStart + 1));
+      var routeType = Math.random() < 0.5 ? 'fast' : 'high';
+
+      // As próprias nuvens substituem o chão nesse trecho: não dá para simplesmente passar por baixo.
+      for (var cg = spanStart; cg < spanStart + spanLen && cg < len - 2; cg++) t.gaps[cg] = true;
+
+      if (routeType === 'fast') {
+        // Três colunas vazias criam uma aproximação longa. O fastjump ganha alcance;
+        // o highjump também pode superar a distância por permanecer mais tempo no ar.
+        if (spanStart - 4 >= 0) t.gaps[spanStart - 4] = false; // piso seguro para iniciar o salto
+        for (var fg = spanStart - 3; fg < spanStart; fg++) if (fg >= 0) t.gaps[fg] = true;
+      }
+      cloudPlan = { start: spanStart, length: spanLen, route: routeType };
+    }
+
     for (var i = 0; i < len; i++) {
       worldHeights.push(t.heights[i]);
       worldGaps.push(t.gaps[i]);
@@ -460,13 +510,20 @@
 
     // cristal de poder: 1 por fase a partir da 4ª, numa coluna sólida aleatória (fora do começo e do cristal-meta)
     var candidateCols = [];
-    if (idx + 1 >= 4) for (var ci2 = 2; ci2 < len - 2; ci2++) if (!t.gaps[ci2]) candidateCols.push(ci2);
+    if (idx + 1 >= 4) {
+      // Se houver uma rota de nuvens, o cristal de salto correspondente fica antes dela.
+      var crystalLimit = cloudPlan ? Math.min(len - 2, cloudPlan.start - 5) : len - 2;
+      for (var ci2 = 2; ci2 <= crystalLimit; ci2++) if (!t.gaps[ci2]) candidateCols.push(ci2);
+      // Salvaguarda para terrenos em que os primeiros espaços estejam todos ocupados por vãos.
+      if (!candidateCols.length) for (var ci3 = 2; ci3 < len - 2; ci3++) if (!t.gaps[ci3]) candidateCols.push(ci3);
+    }
     var crystalCol = null;
     if (candidateCols.length) {
       var pickCi = candidateCols[Math.floor(Math.random() * candidateCols.length)];
       crystalCol = startC + pickCi;
       var effects = Object.keys(CRYSTAL_EFFECTS);
-      var effect = effects[Math.floor(Math.random() * effects.length)];
+      var preferredEffect = cloudPlan ? (cloudPlan.route === 'fast' ? 'fastjump' : 'highjump') : null;
+      var effect = preferredEffect || effects[Math.floor(Math.random() * effects.length)];
       var mesh = makeCrystalMesh(effect);
       var baseY = t.heights[pickCi] + CFG.blockH / 2 + 0.7;
       mesh.position.set(crystalCol, baseY, 0);
@@ -495,24 +552,22 @@
       }
     }
 
-    // caminho alternativo: um trecho de blocos flutuantes mais altos ao lado do chão normal
-    if (idx + 1 >= 2 && Math.random() < 0.6) {
-      var spanLen = 3 + Math.floor(Math.random() * 4);
-      var spanStart = 6 + Math.floor(Math.random() * Math.max(1, len - spanLen - 10));
-      for (var fc = spanStart; fc < spanStart + spanLen && fc < len - 3; fc++) {
+    // Rota de nuvens suspensas: o topo fica acima do alcance do salto normal ou
+    // distante o bastante para exigir o power-up de velocidade/altura.
+    if (cloudPlan) {
+      for (var fc = cloudPlan.start; fc < cloudPlan.start + cloudPlan.length && fc < len - 2; fc++) {
         var fcol = startC + fc;
-        if (crystalCol !== null && fcol === crystalCol) continue;
-        // Mantém a plataforma realmente suspensa: o fundo do bloco fica acima do chão.
-        // A altura total (folga + espessura) continua dentro do alcance de um salto carregado.
-        var cloudThicknessScale = 0.48 + Math.random() * 0.20;
+        var cloudThicknessScale = 0.58 + Math.random() * 0.24;
         var cloudHeight = CFG.blockH * cloudThicknessScale;
-        var cloudGap = 0.38 + Math.random() * 0.18;
-        var floatY = t.heights[fc] + cloudGap + cloudHeight;
+        var riseAboveGround = cloudPlan.route === 'high'
+          ? 2.95 + Math.random() * 0.38   // acima do pico do salto normal (máx. ~2.63)
+          : 1.85 + Math.random() * 0.25;  // salto normal não cobre a distância dos três vãos
+        var floatY = t.heights[fc] + riseAboveGround;
         worldFloatHeights[fcol] = floatY;
 
-        // Varia o tamanho dos quadrados sem abrir buracos impossíveis no caminho.
-        var cloudWidth = 0.98 + Math.random() * 0.38;
-        var cloudDepth = 0.86 + Math.random() * 0.46;
+        // Variação perceptível nas dimensões, sem transformar cada nuvem em uma ilha impossível.
+        var cloudWidth = 0.82 + Math.random() * 0.62;
+        var cloudDepth = 0.74 + Math.random() * 0.72;
         var fmesh = makeFloatBlockMesh(CLOUD_BLOCK_COLORS[Math.floor(Math.random() * CLOUD_BLOCK_COLORS.length)]);
         fmesh.scale.set(cloudWidth, cloudThicknessScale, cloudDepth);
         fmesh.position.set(fcol, floatY - cloudHeight / 2, (Math.random() - 0.5) * 0.08);
